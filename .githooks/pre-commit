@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Hook pre-commit d'Avanti : refuse un commit qui contient un secret, qui ne
+# passe pas l'analyse statique (frontières hexagonales incluses) ou dont les
+# tests rapides échouent.
+#
+# Activation : make hooks  (équivaut à git config core.hooksPath .githooks)
+# Contournement ponctuel : git commit --no-verify — à n'utiliser qu'en connaissance
+# de cause, la CI refera les mêmes vérifications de toute façon.
+set -euo pipefail
+
+# Le hook se localise par son propre chemin plutôt que par le répertoire courant :
+# git l'invoque depuis la racine, mais un appel manuel ou un client graphique peut
+# le lancer d'ailleurs. .githooks/ étant versionné dans le dépôt, remonter d'un
+# cran donne toujours la racine.
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+BIN="$ROOT/bin"
+
+echoerr() { printf '%s\n' "$*" >&2; }
+
+fail() {
+	echoerr ""
+	echoerr "pre-commit : $1"
+	echoerr "Corrigez, puis recommencez. (Outils manquants ? lancez make tools)"
+	exit 1
+}
+
+if [ ! -x "$BIN/gitleaks" ] || [ ! -x "$BIN/golangci-lint" ]; then
+	fail "outillage absent de ./bin — lancez make tools"
+fi
+
+echo "pre-commit 1/3 — recherche de secrets (gitleaks)"
+"$BIN/gitleaks" git "$ROOT" --staged --no-banner --redact \
+	|| fail "gitleaks a trouvé un secret potentiel dans les fichiers indexés"
+
+echo "pre-commit 2/3 — analyse statique (golangci-lint)"
+make -C "$ROOT" lint \
+	|| fail "golangci-lint a signalé des problèmes"
+
+echo "pre-commit 3/3 — tests rapides (go test -short)"
+make -C "$ROOT" test-short \
+	|| fail "des tests échouent"
+
+echo "pre-commit : tout est vert."

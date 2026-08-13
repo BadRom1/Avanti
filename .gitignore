@@ -1,0 +1,31 @@
+# Outillage épinglé et binaire compilé (reconstruits par `make tools` / `make build`)
+/bin/
+
+# Couverture et profils
+coverage.out
+coverage.html
+*.prof
+*.test
+
+# Configuration locale : ne doit jamais entrer dans l'historique
+.env
+.env.*
+!.env.example
+
+# Données locales du développement (uploads, base, dumps)
+/data/
+*.sqlite
+*.sqlite3
+*.dump
+
+# Rapports d'outils
+gosec-report.json
+gitleaks-report.json
+gremlins-report.json
+
+# Éditeurs et systèmes de fichiers
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

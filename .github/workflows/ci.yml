@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Doit rester aligné sur la directive `go` de go.mod.
+  GO_VERSION: "1.26.5"
+
+jobs:
+  lint:
+    name: Analyse statique
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # Cette action porte sa propre version de golangci-lint : elle doit rester
+      # identique à GOLANGCI_VERSION dans le Makefile, sinon la CI et le poste du
+      # contributeur ne jugent pas le même code avec les mêmes règles.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.12.2
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    # Postgres est démarré dès maintenant : les tests d'intégration des adapters
+    # arrivent avec le socle applicatif et trouveront la base déjà là.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: avanti
+          POSTGRES_PASSWORD: change-me-ci-only
+          POSTGRES_DB: avanti_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U avanti -d avanti_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      AVANTI_TEST_DATABASE_URL: postgres://avanti:change-me-ci-only@localhost:5432/avanti_test?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Vérifier que go.mod et go.sum sont à jour
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Tests avec détecteur de course
+        run: make test
+
+      - name: Compilation du binaire
+        run: make build
+
+  sec:
+    name: Sécurité
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # Les versions de gosec et govulncheck sont épinglées dans le Makefile :
+      # passer par `make sec` garantit que la CI utilise exactement les binaires
+      # que le contributeur a en local.
+      - name: gosec et govulncheck
+        run: make sec
+
+  secrets:
+    name: Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          # gitleaks doit voir tout l'historique pour juger les anciens commits,
+          # pas seulement la pointe de la branche.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: gitleaks
+        run: make secrets

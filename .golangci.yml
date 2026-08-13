@@ -1,0 +1,400 @@
+# Configuration golangci-lint v2 — voir https://golangci-lint.run/docs/configuration/file/
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  # Les globs depguard ci-dessous sont écrits relativement à la racine du dépôt.
+  relative-path-mode: gomod
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - depguard
+    - dupl
+    - errcheck
+    - errorlint
+    - gocritic
+    - gocyclo
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nilerr
+    - noctx
+    - nolintlint
+    - prealloc
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+
+  settings:
+    dupl:
+      threshold: 120
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    gocyclo:
+      min-complexity: 12
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+
+    govet:
+      enable-all: true
+      disable:
+        # fieldalignment optimise l'empreinte mémoire au prix de la lisibilité de
+        # structures métier qu'on veut pouvoir lire dans l'ordre du domaine.
+        - fieldalignment
+
+    misspell:
+      locale: US
+      # misspell corrige de l'anglais ; la documentation d'Avanti est en français.
+      # Les mots ci-dessous sont du français correct que le dictionnaire anglais
+      # prend pour des fautes de frappe. La liste grandit au fil de la prose : y
+      # ajouter un mot est légitime, y ajouter un identifiant de code ne l'est pas
+      # (le code reste en anglais, hors vocabulaire métier).
+      ignore-rules:
+        # Vocabulaire métier — le langage ubiquitaire du projet.
+        - devis
+        - facture
+        - acompte
+        - etape
+        - jalon
+        - artisan
+        # Français courant homographe de fautes anglaises.
+        - analyse
+        - connexion
+        - connexions
+        - demande
+        - demandes
+        - persistance
+        - pointeur
+        - programme
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - disableStutteringCheck
+        - name: package-comments
+
+    staticcheck:
+      checks:
+        - all
+
+    # depguard encode les frontières de l'architecture hexagonale décrites dans
+    # docs/ARCHITECTURE.md (R1, R3, R4). Toute violation fait échouer le lint,
+    # donc la CI, donc la fusion.
+    #
+    # --- Pourquoi des listes d'autorisation plutôt que d'interdiction
+    #
+    # Une liste deny énumère l'interdit : ce qu'on oublie d'y écrire devient
+    # autorisé, en silence. Une liste allow énumère le permis : ce qu'on oublie
+    # d'y écrire devient interdit, bruyamment, au premier import. Les deux
+    # demandent le même entretien — seule la direction de l'échec change, et un
+    # échec bruyant se corrige en une minute là où une brèche silencieuse
+    # survit des mois. D'où le `list-mode: strict` de chaque règle ci-dessous :
+    # un import est refusé sauf s'il figure dans `allow`.
+    #
+    # L'unique entrée `deny` de chaque règle ne bloque rien de plus que la
+    # liste allow : elle ne sert qu'à attacher un message d'explication au
+    # refus, depguard remontant le `desc` de l'entrée deny correspondante.
+    # L'entrée allow, plus spécifique (préfixe plus long), l'emporte sur elle —
+    # c'est ce qui laisse passer les imports légitimes du dépôt.
+    #
+    # --- Comment ajouter quelque chose
+    #
+    #   Une bibliothèque tierce : l'ajouter au `allow` des seules règles qui en
+    #   ont besoin. Un domaine n'accepte qu'une bibliothèque métier sans effet
+    #   de bord, et c'est volontairement une décision visible en revue. Les
+    #   fichiers _test.go suivent la règle de leur répertoire : une aide de
+    #   test (testify et consorts) s'ajoute exactement au même endroit que le
+    #   reste, dans la règle du répertoire concerné.
+    #
+    #   Un domaine : créer sa règle `domaine-<nom>`, puis l'ajouter au `allow`
+    #   des six règles `adapter-*`. En oublier une ne crée pas de brèche : le
+    #   premier adapter qui voudra ce domaine se fera refuser l'import.
+    #
+    #   Une famille d'adapters : créer sa règle `adapter-<famille>` en copiant
+    #   sa voisine, puis l'exclure de `garde-fou-package-non-declare`. Tant que
+    #   ce n'est pas fait, la famille ne voit que la bibliothèque standard.
+    #
+    # cmd/avanti n'a délibérément aucune règle de frontière : c'est
+    # l'assembleur, le seul endroit du dépôt autorisé à connaître les domaines
+    # et les adapters à la fois (R4). Seule `tout-le-depot` s'y applique.
+    depguard:
+      rules:
+        # --- Domaines : bibliothèque standard et eux-mêmes, rien d'autre (R1)
+
+        domaine-devis:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/devis/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/devis
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "un domaine n'importe rien d'autre du dépôt (R1) — un autre domaine se référence par identifiant faible (Facture.devisID), un besoin technique se déclare en port que cmd/ implémente, la config et le logger arrivent en paramètres de construction"
+
+        domaine-planning:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/planning/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/planning
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "un domaine n'importe rien d'autre du dépôt (R1) — un autre domaine se référence par identifiant faible (Etape.devisID), un besoin technique se déclare en port que cmd/ implémente, la config et le logger arrivent en paramètres de construction"
+
+        domaine-finance:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/finance/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/finance
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "un domaine n'importe rien d'autre du dépôt (R1) — un autre domaine se référence par identifiant faible (Facture.devisID), un besoin technique se déclare en port que cmd/ implémente, la config et le logger arrivent en paramètres de construction"
+
+        domaine-document:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/document/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/document
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "un domaine n'importe rien d'autre du dépôt (R1) — la cible d'une pièce est un couple (type, identifiant), le contenu binaire part vers un port de stockage qu'adapters/storage implémente, la config et le logger arrivent en paramètres"
+
+        domaine-identity:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/identity/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/identity
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "un domaine n'importe rien d'autre du dépôt (R1) — identity expose des comptes et des scopes, la mécanique OAuth 2.1 vit dans adapters/mcp, la config et le logger arrivent en paramètres de construction"
+
+        # --- Socle technique : bibliothèque standard et lui-même (R3)
+        #
+        # Les bibliothèques techniques du socle (pgx, scs, goose…) s'ajoutent
+        # explicitement ci-dessous au fur et à mesure des lots.
+
+        socle-platform:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/platform/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/platform
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "platform est le socle technique (R3) — il ne connaît ni domaine ni adapter, la dépendance va toujours dans l'autre sens"
+
+        # --- Adapters : une règle par famille (R4)
+        #
+        # Chaque famille voit la bibliothèque standard, elle-même, les cinq
+        # domaines et internal/platform — jamais une autre famille. C'est ce qui
+        # rend R4 structurelle : le seul point où deux familles se rencontrent
+        # est cmd/avanti. Les bibliothèques tierces propres à une famille
+        # (pgx pour postgres, le SDK MCP pour mcp…) s'ajoutent à son `allow`.
+
+        adapter-postgres:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/adapters/postgres/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/adapters/postgres
+            - github.com/Romain-Badino/Avanti/internal/devis
+            - github.com/Romain-Badino/Avanti/internal/document
+            - github.com/Romain-Badino/Avanti/internal/finance
+            - github.com/Romain-Badino/Avanti/internal/identity
+            - github.com/Romain-Badino/Avanti/internal/planning
+            - github.com/Romain-Badino/Avanti/internal/platform
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"
+
+        adapter-web:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/adapters/web/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/adapters/web
+            - github.com/Romain-Badino/Avanti/internal/devis
+            - github.com/Romain-Badino/Avanti/internal/document
+            - github.com/Romain-Badino/Avanti/internal/finance
+            - github.com/Romain-Badino/Avanti/internal/identity
+            - github.com/Romain-Badino/Avanti/internal/planning
+            - github.com/Romain-Badino/Avanti/internal/platform
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"
+
+        adapter-mcp:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/adapters/mcp/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/adapters/mcp
+            - github.com/Romain-Badino/Avanti/internal/devis
+            - github.com/Romain-Badino/Avanti/internal/document
+            - github.com/Romain-Badino/Avanti/internal/finance
+            - github.com/Romain-Badino/Avanti/internal/identity
+            - github.com/Romain-Badino/Avanti/internal/planning
+            - github.com/Romain-Badino/Avanti/internal/platform
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"
+
+        adapter-storage:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/adapters/storage/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/adapters/storage
+            - github.com/Romain-Badino/Avanti/internal/devis
+            - github.com/Romain-Badino/Avanti/internal/document
+            - github.com/Romain-Badino/Avanti/internal/finance
+            - github.com/Romain-Badino/Avanti/internal/identity
+            - github.com/Romain-Badino/Avanti/internal/planning
+            - github.com/Romain-Badino/Avanti/internal/platform
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"
+
+        adapter-mail:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/adapters/mail/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/adapters/mail
+            - github.com/Romain-Badino/Avanti/internal/devis
+            - github.com/Romain-Badino/Avanti/internal/document
+            - github.com/Romain-Badino/Avanti/internal/finance
+            - github.com/Romain-Badino/Avanti/internal/identity
+            - github.com/Romain-Badino/Avanti/internal/planning
+            - github.com/Romain-Badino/Avanti/internal/platform
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"
+
+        adapter-export:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/adapters/export/**"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/adapters/export
+            - github.com/Romain-Badino/Avanti/internal/devis
+            - github.com/Romain-Badino/Avanti/internal/document
+            - github.com/Romain-Badino/Avanti/internal/finance
+            - github.com/Romain-Badino/Avanti/internal/identity
+            - github.com/Romain-Badino/Avanti/internal/planning
+            - github.com/Romain-Badino/Avanti/internal/platform
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"
+
+        # --- Garde-fou : tout package interne non déclaré ci-dessus
+        #
+        # Sans cette règle, créer internal/quelquechose/ le placerait hors de
+        # toute frontière, sans que rien ne le signale — exactement la brèche
+        # silencieuse que les listes allow servent à éviter. Ici l'oubli se
+        # remarque tout de suite : le nouveau package ne voit que la
+        # bibliothèque standard tant que sa propre règle n'existe pas.
+        garde-fou-package-non-declare:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/**"
+            - "!${base-path}/internal/devis/**"
+            - "!${base-path}/internal/planning/**"
+            - "!${base-path}/internal/finance/**"
+            - "!${base-path}/internal/document/**"
+            - "!${base-path}/internal/identity/**"
+            - "!${base-path}/internal/platform/**"
+            - "!${base-path}/internal/adapters/postgres/**"
+            - "!${base-path}/internal/adapters/web/**"
+            - "!${base-path}/internal/adapters/mcp/**"
+            - "!${base-path}/internal/adapters/storage/**"
+            - "!${base-path}/internal/adapters/mail/**"
+            - "!${base-path}/internal/adapters/export/**"
+          allow:
+            - $gostd
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "ce package interne n'a pas de règle depguard, donc pas de frontière vérifiée — déclarez-la dans .golangci.yml (copiez la règle la plus proche) et retirez le package du garde-fou"
+
+        # --- Interdictions transverses, cmd/avanti compris
+        #
+        # Seule règle en mode deny du fichier, et c'est volontaire : son objet
+        # n'est pas de borner un périmètre mais de bannir quelques paquets
+        # précis partout, y compris là où aucune frontière ne s'applique.
+        tout-le-depot:
+          list-mode: original
+          files:
+            - $all
+          deny:
+            - pkg: math/rand$
+              desc: "utilisez math/rand/v2, ou crypto/rand pour tout ce qui touche à la sécurité"
+            - pkg: github.com/pkg/errors
+              desc: "utilisez errors et fmt.Errorf avec %w de la bibliothèque standard"
+            - pkg: github.com/sirupsen/logrus
+              desc: "la journalisation passe par log/slog via internal/platform"
+            - pkg: io/ioutil
+              desc: "paquet déprécié : utilisez os et io"
+
+  exclusions:
+    generated: lax
+    rules:
+      # Les tests peuvent se répéter et n'ont pas besoin des mêmes garde-fous
+      # que le code de production.
+      - path: _test\.go
+        linters:
+          - dupl
+          - gocyclo
+          - gosec
+          - unparam
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - github.com/Romain-Badino/Avanti
