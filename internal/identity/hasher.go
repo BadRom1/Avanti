@@ -41,7 +41,7 @@ func (e PasswordHash) Empty() bool {
 // restent instantanés, ce qui les rend utilisables sous `make mutation`.
 //
 // L'implémentation de production est [Argon2idHasher], dans ce même package :
-// le choix de l'algorithme est arrêté par docs/ARCHITECTURE.md §5, il n'a pas à
+// le choix de l'algorithme est arrêté par docs/ARCHITECTURE.md §6, il n'a pas à
 // être rejouable par configuration.
 type Hasher interface {
 	// Hash calcule l'empreinte d'un mot de passe. Deux appels sur le même mot
@@ -68,7 +68,7 @@ const (
 )
 
 // Argon2idHasher hache les mots de passe en argon2id, l'algorithme retenu par
-// docs/ARCHITECTURE.md §5.
+// docs/ARCHITECTURE.md §6.
 type Argon2idHasher struct {
 	params *argon2id.Params
 }

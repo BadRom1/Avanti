@@ -60,6 +60,10 @@ type Config struct {
 	BaseURL *url.URL
 	// DatabaseURL est la chaîne de connexion PostgreSQL.
 	DatabaseURL string
+	// OAuthSecret est la clé HMAC du serveur d'autorisation OAuth 2.1. Elle
+	// signe les codes d'autorisation et les jetons ; la perdre invalide tout ce
+	// qui est en circulation, la divulguer permet d'en fabriquer.
+	OAuthSecret []byte
 	// DocumentsDir est le répertoire, toujours absolu, où l'adapter de stockage
 	// dépose le contenu binaire des pièces du dossier.
 	DocumentsDir string
@@ -81,6 +85,7 @@ const (
 	keyListenAddr       = "LISTEN_ADDR"
 	keyBaseURL          = "BASE_URL"
 	keyDatabaseURL      = "DATABASE_URL"
+	keyOAuthSecret      = "OAUTH_SECRET" // #nosec G101 -- nom d'une variable d'environnement, pas un secret.
 	keyDocumentsDir     = "DOCUMENTS_DIR"
 	keyLogLevel         = "LOG_LEVEL"
 	keyLogFormat        = "LOG_FORMAT"
@@ -98,6 +103,20 @@ const (
 	defaultMigrateOnStart   = true
 	defaultDBConnectTimeout = 10 * time.Second
 	defaultShutdownTimeout  = 15 * time.Second
+)
+
+// Contraintes sur le secret OAuth.
+const (
+	// minOAuthSecretLength est la longueur minimale de la clé HMAC, en octets.
+	// Trente-deux est ce qu'exige la bibliothèque qui l'emploie (HMAC-SHA512/256)
+	// et ce que rend `openssl rand -base64 32` — la commande donnée en exemple
+	// dans .env.example produit 44 caractères, donc de la marge.
+	minOAuthSecretLength = 32
+	// placeholderPrefix marque les valeurs d'exemple de .env.example. Elles
+	// conviennent en développement, où elles évitent d'imposer une cérémonie
+	// avant le premier démarrage ; elles sont refusées en production, où laisser
+	// tourner une clé publiée dans le dépôt reviendrait à n'en avoir aucune.
+	placeholderPrefix = "change-me"
 )
 
 // LoadFromEnv lit la configuration dans l'environnement du processus.
@@ -125,6 +144,7 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 		ListenAddr:       l.listenAddr(),
 		BaseURL:          l.baseURL(),
 		DatabaseURL:      l.databaseURL(),
+		OAuthSecret:      l.oauthSecret(env),
 		DocumentsDir:     l.documentsDir(),
 		LogLevel:         l.logLevel(),
 		LogFormat:        l.logFormat(env),
@@ -148,6 +168,9 @@ func (c *Config) LogValue() slog.Value {
 		slog.String("listen_addr", c.ListenAddr),
 		slog.String("base_url", c.BaseURL.String()),
 		slog.String("database_url", redactDSN(c.DatabaseURL)),
+		// La clé HMAC ne sort jamais, pas même tronquée : un préfixe suffirait à
+		// réduire de plusieurs ordres de grandeur le coût d'une recherche.
+		slog.Int("oauth_secret_length", len(c.OAuthSecret)),
 		slog.String("documents_dir", c.DocumentsDir),
 		slog.String("log_level", c.LogLevel.String()),
 		slog.String("log_format", string(c.LogFormat)),
@@ -324,6 +347,45 @@ func (l *loader) databaseURL() string {
 	}
 
 	return value
+}
+
+// oauthSecret lit et valide la clé HMAC du serveur d'autorisation.
+//
+// La valeur est prise telle quelle, sans décodage : ce qui compte pour un HMAC
+// est la quantité d'aléa des octets fournis, et exiger du base64 imposerait un
+// format sans rien ajouter à la solidité. `openssl rand -base64 32` reste la
+// façon recommandée d'en obtenir une, parce qu'elle est sûre et qu'elle tient
+// sur une ligne de fichier d'environnement.
+//
+// Deux refus, et un seul est une question de longueur :
+//
+//   - moins de [minOAuthSecretLength] octets, la bibliothèque de signature
+//     refuserait la clé à l'exécution. Mieux vaut le dire au démarrage, avec le
+//     nom de la variable, que lors de la première tentative de connexion d'un
+//     agent ;
+//   - la valeur d'exemple en production. Elle est publiée dans le dépôt : la
+//     garder reviendrait à laisser quiconque a lu .env.example fabriquer des
+//     jetons valides pour l'instance.
+func (l *loader) oauthSecret(env Environment) []byte {
+	value := l.required(keyOAuthSecret)
+	if value == "" {
+		return nil
+	}
+
+	if len(value) < minOAuthSecretLength {
+		l.reject(keyOAuthSecret, fmt.Sprintf(
+			"clé de %d octets, %d au minimum — engendrez-la avec `openssl rand -base64 32`",
+			len(value), minOAuthSecretLength))
+		return nil
+	}
+	if env == Production && strings.HasPrefix(value, placeholderPrefix) {
+		l.reject(keyOAuthSecret, fmt.Sprintf(
+			"la valeur d'exemple de .env.example est refusée en %s — engendrez-la avec `openssl rand -base64 32`",
+			Production))
+		return nil
+	}
+
+	return []byte(value)
 }
 
 // documentsDir rend le répertoire de stockage toujours absolu, pour que le

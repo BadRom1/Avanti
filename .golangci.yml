@@ -126,8 +126,19 @@ linters:
         - respecte
         - restauration
         - substitue
+        - attendent
+        - combinaison
+        - confidentiel
+        - conjonction
+        - permise
+        - finisse
+        - normalise
+        - origines
+        - terminaison
         - trafic
         - transforme
+        - utilisable
+        - utilisation
         - utilise
 
         # Fragments, pas des mots : misspell coupe sur les caractères accentués,
@@ -136,8 +147,11 @@ linters:
         # entiers — la forme tronquée est celle que misspell compare.
         - activit
         - interm
+        - journalis
         - marrage
         - normalis
+        - strat
+        - tournements
 
     nolintlint:
       require-explanation: true
@@ -255,7 +269,7 @@ linters:
             - github.com/Romain-Badino/Avanti/internal/identity
             # Bibliothèque métier sans effet de bord, admise dans le domaine (R1).
             #
-            # argon2id est *la* décision de docs/ARCHITECTURE.md §5 sur les mots
+            # argon2id est *la* décision de docs/ARCHITECTURE.md §6 sur les mots
             # de passe, et une décision de sécurité n'a pas à être rejouable de
             # l'extérieur : la mettre derrière un port réglable par la
             # configuration reviendrait à offrir un moyen de l'affaiblir. La
@@ -286,7 +300,7 @@ linters:
           allow:
             - $gostd
             - github.com/Romain-Badino/Avanti/internal/platform
-            # pgx : le pilote PostgreSQL retenu (docs/ARCHITECTURE.md §5). Le
+            # pgx : le pilote PostgreSQL retenu (docs/ARCHITECTURE.md §6). Le
             # sous-paquet stdlib sert à présenter le pool en *sql.DB, seul
             # dialecte que goose comprenne.
             - github.com/jackc/pgx/v5
@@ -338,10 +352,20 @@ linters:
             - github.com/Romain-Badino/Avanti/internal/identity
             - github.com/Romain-Badino/Avanti/internal/planning
             - github.com/Romain-Badino/Avanti/internal/platform
-            # pgx : le pilote PostgreSQL retenu (docs/ARCHITECTURE.md §5). C'est
+            # pgx : le pilote PostgreSQL retenu (docs/ARCHITECTURE.md §6). C'est
             # ici, dans les dépôts, qu'il sert à écrire le SQL réel ; le socle,
             # lui, n'en tient que le pool.
             - github.com/jackc/pgx/v5
+            # fosite : le serveur d'autorisation OAuth 2.1 (docs/ARCHITECTURE.md
+            # §6). Ici n'entrent que ses *interfaces de stockage* — clients,
+            # codes, jetons, sessions PKCE — que cet adapter implémente en SQL.
+            # La mécanique du protocole, elle, vit dans adapters/web.
+            #
+            # Les deux familles voient donc fosite sans se voir l'une l'autre :
+            # c'est cmd/avanti qui construit ce magasin et l'injecte dans le
+            # fournisseur web (R4). fosite est le vocabulaire commun, pas un
+            # chemin d'import entre familles.
+            - github.com/ory/fosite
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
               desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"
@@ -366,6 +390,7 @@ linters:
             - github.com/Romain-Badino/Avanti/internal/planning
             - github.com/Romain-Badino/Avanti/internal/platform
             - github.com/jackc/pgx/v5
+            - github.com/ory/fosite
             - github.com/testcontainers/testcontainers-go
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
@@ -385,17 +410,28 @@ linters:
             - github.com/Romain-Badino/Avanti/internal/planning
             - github.com/Romain-Badino/Avanti/internal/platform
             # go-i18n : catalogue de messages, seule façon d'écrire du texte
-            # affiché (docs/ARCHITECTURE.md §5).
+            # affiché (docs/ARCHITECTURE.md §6).
             - github.com/nicksnyder/go-i18n/v2
             # golang.org/x/text : les étiquettes de langue que go-i18n manipule.
             - golang.org/x/text/language
-            # scs : sessions serveur (docs/ARCHITECTURE.md §5). Seule l'interface
+            # scs : sessions serveur (docs/ARCHITECTURE.md §6). Seule l'interface
             # scs.Store et le gestionnaire de sessions entrent ici — la politique
             # du cookie est une décision de l'interface web, donc sa place est
             # bien celle-ci. Le magasin PostgreSQL concret (pgxstore) est choisi
             # par cmd/avanti et arrive en paramètre, ce qui laisse cet adapter
             # ignorant de pgx.
             - github.com/alexedwards/scs/v2
+            # fosite : le serveur d'autorisation OAuth 2.1 (docs/ARCHITECTURE.md
+            # §6). C'est ici qu'il sert, parce que la mécanique OAuth est une
+            # surface HTTP — points de terminaison, page de consentement,
+            # document de métadonnées — et que cet adapter est déjà celui qui
+            # tient les sessions dont le consentement a besoin.
+            #
+            # Le magasin concret, lui, est celui d'adapters/postgres : il arrive
+            # en paramètre sous la forme des interfaces de stockage de fosite,
+            # exactement comme scs.Store plus haut, et laisse donc cet adapter
+            # ignorant de pgx.
+            - github.com/ory/fosite
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
               desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"

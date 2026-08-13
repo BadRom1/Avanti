@@ -149,8 +149,14 @@ func (h *Handler) requireAuth(next http.Handler) http.Handler {
 //
 // /healthz et /readyz n'y figurent pas : ils sont montés par internal/platform en
 // amont de cet adapter et ne lui parviennent jamais.
+//
+// Les points de terminaison machine du serveur d'autorisation y figurent, eux :
+// un agent qui vient chercher un jeton n'a pas de session, et le rediriger vers
+// /connexion lui répondrait une page HTML là où il attend du JSON. La liste
+// reste énumérative, donc courte et relue à chaque ajout — voir
+// [Handler.requireAuth] pour le sens de cette forme.
 func isPublicPath(path string) bool {
-	return path == loginPath || strings.HasPrefix(path, staticPrefix)
+	return path == loginPath || strings.HasPrefix(path, staticPrefix) || isOAuthMachinePath(path)
 }
 
 // actorFromSession reconstruit l'acteur depuis la session.

@@ -1,0 +1,89 @@
+{{- /*
+Page de consentement OAuth. C'est le seul moment où un humain décide qu'un
+agent IA aura accès à son dossier, et la page est écrite pour cette décision :
+qui demande, ce qui sera donné, et deux boutons qui ne se confondent pas.
+
+Le nom du client vient de son enregistrement, donc d'un inconnu. Il est écrit
+avec {{ }} comme tout le reste, donc échappé par html/template : aucune balise
+qu'il contiendrait ne sera interprétée.
+
+Aucun jeton CSRF dans le formulaire, comme ailleurs : la protection vient de
+net/http.CrossOriginProtection et de SameSite=Lax sur le cookie de session. Voir
+crossOriginProtection dans web.go.
+*/ -}}
+{{ define "title" }}{{ .T "oauth.consentement.title" }}{{ end }}
+
+{{ define "content" }}
+{{- $d := .Data }}
+<section class="card card--etroite" aria-labelledby="titre-consentement">
+    <h1 id="titre-consentement">{{ .T "oauth.consentement.heading" }}</h1>
+
+    <p class="lede">{{ .T "oauth.consentement.intro" "Client" $d.ClientName }}</p>
+
+    {{- /*
+    Le bloc d'identité existe parce que le nom affiché juste au-dessus est
+    déclaré par le client lui-même : l'enregistrement dynamique étant ouvert,
+    n'importe qui peut se présenter sous le nom d'un agent connu. Ce que le
+    serveur constate, lui — l'identifiant qu'il a attribué, la date à laquelle il
+    l'a fait, et le fait d'avoir déjà vu ce couple compte/client — ne s'usurpe
+    pas, et c'est là-dessus que la décision doit se prendre.
+    */ -}}
+    <h2>{{ .T "oauth.consentement.identite_heading" }}</h2>
+    <p class="note">{{ .T "oauth.consentement.identite_avertissement" }}</p>
+    <ul class="identite">
+        <li>
+            <span class="identite__libelle">{{ .T "oauth.consentement.client_id" }}</span>
+            <code class="identite__valeur">{{ $d.ClientID }}</code>
+        </li>
+        {{- if $d.RegisteredAt }}
+        <li>
+            <span class="identite__libelle">{{ .T "oauth.consentement.enregistre_le" }}</span>
+            <span class="identite__valeur">{{ $d.RegisteredAt }}</span>
+        </li>
+        {{- end }}
+        <li>
+            {{- if $d.FirstGrant }}
+            <strong class="identite__premiere">{{ .T "oauth.consentement.premiere_autorisation" }}</strong>
+            {{- else }}
+            <span class="identite__connu">{{ .T "oauth.consentement.deja_autorise" }}</span>
+            {{- end }}
+        </li>
+    </ul>
+
+    <h2>{{ .T "oauth.consentement.accorde_heading" }}</h2>
+    <ul class="acces">
+        {{- range $d.Scopes }}
+        <li>
+            <span class="acces__domaine">{{ .Label }}</span>
+            <span class="acces__droit">{{ .Name }}</span>
+        </li>
+        {{- end }}
+    </ul>
+
+    {{- if $d.Ignored }}
+    <h2>{{ .T "oauth.consentement.ignore_heading" }}</h2>
+    <p class="note">{{ .T "oauth.consentement.ignore_intro" }}</p>
+    <ul class="acces">
+        {{- range $d.Ignored }}
+        <li>
+            <span class="acces__domaine">{{ .Label }}</span>
+            <span class="acces__droit">{{ .Name }}</span>
+        </li>
+        {{- end }}
+    </ul>
+    {{- end }}
+
+    <p class="note">{{ .T "oauth.consentement.avertissement" }}</p>
+
+    <form class="formulaire" method="post" action="{{ $d.Action }}">
+        <input type="hidden" name="{{ $d.FieldRequest }}" value="{{ $d.Request }}">
+
+        <button class="button" type="submit" name="{{ $d.FieldDecision }}" value="{{ $d.AllowValue }}">
+            {{ .T "oauth.consentement.autoriser" }}
+        </button>
+        <button class="button button--discret" type="submit" name="{{ $d.FieldDecision }}" value="{{ $d.RefuseValue }}">
+            {{ .T "oauth.consentement.refuser" }}
+        </button>
+    </form>
+</section>
+{{ end }}

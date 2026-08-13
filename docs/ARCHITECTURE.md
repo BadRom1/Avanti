@@ -319,7 +319,157 @@ déploiement standard, il faudra le déclarer explicitement en configuration (li
 d'adresses de proxys de confiance) et n'accepter `X-Forwarded-For` que de leur
 part, plutôt que de faire confiance à l'en-tête par défaut.
 
-## 5. La stack technique
+## 5. OAuth 2.1 et l'accès agent
+
+Avanti **embarque son propre serveur d'autorisation**. La spécification MCP ne
+laisse pas le choix du protocole — un client MCP s'authentifie en OAuth 2.1, pas
+autrement — mais celui de l'embarquer plutôt que de déléguer suit la même ligne
+que le reste : une instance auto-hébergée qui exigerait un fournisseur d'identité
+tiers ajouterait un service à surveiller, un compte à créer et une panne de plus,
+pour deux personnes et une poignée d'agents.
+
+Le serveur MCP lui-même viendra plus tard ; l'autorisation, elle, est écrite,
+testée et branchée. L'ordre est voulu : ce qui décide de qui peut faire quoi n'a
+rien à gagner à être écrit dans l'élan d'un lot fonctionnel.
+
+### Le flux, et ce qu'il exclut
+
+Un seul flux est proposé, celui qu'OAuth 2.1 laisse à un client public : **code
+d'autorisation avec PKCE**, plus le rafraîchissement qui le prolonge. Ce que la
+liste ne contient pas est aussi important — ni `implicit` ni `password`, qu'OAuth
+2.1 a retirés, ni `client_credentials`, qui autoriserait un logiciel sans qu'aucun
+humain n'ait consenti à rien.
+
+- **PKCE est exigé de tous les clients, en `S256` seulement.** L'exigence ne
+  dépend pas du type de client : PKCE protège de l'interception du code, ce qui
+  n'a rien à voir avec la capacité d'un client à garder un secret. La méthode
+  `plain` reste refusée — un défi en clair n'apporte rien qu'un attaquant qui voit
+  le code ne voie aussi.
+- **Tous les clients sont publics**, et le document de métadonnées n'annonce que
+  la méthode d'authentification `none`. Un agent IA tourne chez un tiers ; lui
+  remettre un secret ne ferait qu'offrir l'illusion d'une authentification. Ce qui
+  l'authentifie est PKCE et la redirection vers une adresse enregistrée.
+- **Le scope `mcp` est obligatoire dans la demande.** Ce serveur d'autorisation
+  n'existe que pour ouvrir l'accès MCP : une demande qui ne le réclame pas
+  obtiendrait un jeton que le serveur MCP refuserait ensuite, sans que personne ne
+  comprenne pourquoi.
+- **L'enregistrement dynamique de clients (RFC 7591) est ouvert**, parce que MCP
+  l'impose : un agent qui découvre un serveur n'a, par définition, pas de compte
+  pour s'y annoncer. Ouvert ne veut pas dire sans limite, et les garde-fous sont
+  détaillés ci-dessous.
+- **Le document de découverte (RFC 8414)** est servi sur le chemin imposé par la
+  norme. C'est la seule chose qu'un client sache d'Avanti avant de commencer, et
+  un champ manquant n'y produit pas une erreur mais un client qui renonce. Il
+  déclare aussi le paramètre `iss` (RFC 9207), que la réponse d'autorisation
+  porte : un client conforme détecte ainsi un code venu d'un autre serveur que
+  celui qu'il croit interroger.
+- **L'indicateur de ressource (RFC 8707) est vérifié** : la valeur envoyée doit
+  désigner cette instance. C'est la protection contre le « député confus », où un
+  serveur MCP malveillant ferait émettre à son profit un jeton valable ailleurs.
+  Ce qui n'est pas fait, et qui viendra avec le serveur MCP : lier l'audience du
+  jeton à l'URL canonique de ce serveur, qui n'existe pas encore.
+
+L'enregistrement ouvert tient par des bornes, toutes constantes du code : un
+plafond de clients par instance, une longueur maximale pour le nom affiché, un
+nombre maximal d'adresses de retour, une taille maximale de corps accepté, et une
+limite d'enregistrements par heure et par adresse d'appel — le même garde-fou en
+mémoire que celui du formulaire de connexion, avec les mêmes réserves derrière un
+reverse proxy (§4). Le contrôle qui compte le plus est celui des **adresses de
+retour**, parce que c'est là qu'un code d'autorisation est livré : sont refusés le
+joker, le fragment, les identifiants dans l'URL, l'adresse relative, et tout schéma
+autre que `https` — à l'exception de `http` sur la boucle locale, sans quoi un
+agent installé sur le poste de l'utilisateur ne pourrait pas recevoir son code
+(RFC 8252).
+
+Le consentement, lui, est une page d'Avanti comme les autres : en français, servie
+par le catalogue i18n, derrière la session web. Elle affiche **ce qui sera
+réellement accordé** — l'intersection de ce que le client demande et de ce que le
+compte détient — et, séparément, ce qui a été demandé sans être obtenu. Montrer la
+demande brute ferait consentir à des droits qui ne seront pas donnés ; taire les
+scopes ignorés laisserait l'agent échouer plus tard sans explication.
+
+### Où vivent les pièces
+
+Le protocole traverse quatre répertoires, et le découpage est celui des règles de
+frontières, pas celui du hasard :
+
+| Où | Quoi |
+|---|---|
+| `internal/identity` | le port `TokenVerifier`, les scopes et la table des rôles |
+| `internal/adapters/web` | les points de terminaison, la page de consentement, le document de métadonnées, l'implémentation du port |
+| `internal/adapters/postgres` | le magasin exigé par la bibliothèque : clients, codes, jetons |
+| `cmd/avanti` | l'assemblage, et le ménage périodique des enregistrements expirés |
+
+Trois conséquences de R1 et R4 valent d'être écrites, parce qu'elles se
+paraphrasent mal :
+
+- **le domaine ne voit d'OAuth que `identity.TokenVerifier`** : une interface d'une
+  méthode, qui rend un `Actor` à partir d'un jeton. C'est par elle que le futur
+  adapter MCP obtiendra l'identité de son appelant, sans jamais apprendre que
+  fosite existe ;
+- **l'interface du magasin est déclarée dans `adapters/web`, pas dans le
+  domaine.** Ses méthodes sont celles de la bibliothèque, mot pour mot : les
+  redéclarer dans `identity` y ferait entrer le vocabulaire d'une dépendance
+  tierce, ce que R1 interdit ;
+- **les deux familles d'adapters ne s'importent pas pour autant.** Elles parlent
+  toutes deux le vocabulaire de fosite, et c'est `cmd/avanti` qui construit le
+  magasin PostgreSQL et l'injecte dans le serveur monté par `adapters/web` (R4).
+  Le nom d'affichage d'un client, que le protocole ne connaît pas, voyage par une
+  interface facultative reconnue par assertion de type, plutôt que par une
+  structure partagée entre les deux familles.
+
+### Les décisions de sécurité
+
+Elles sont dans le code, mais elles ne se lisent qu'en le parcourant ; les voici
+rassemblées.
+
+- **Aucun jeton n'est stocké.** La base ne contient que la *signature* HMAC
+  calculée à partir du jeton et de la clé de l'instance. Une lecture de la base dit
+  quels jetons existent, sans donner le moyen de les rejouer.
+- **Les durées de vie sont des constantes, pas des réglages** : une heure pour un
+  jeton d'accès, cinq minutes pour un code d'autorisation, trente jours pour un
+  jeton de rafraîchissement. Ce sont des décisions de sécurité de l'interface, au
+  même titre que la durée d'une session ; les exposer en configuration offrirait
+  surtout le moyen de les affaiblir. Une passe de ménage horaire supprime ce qui a
+  expiré, faute de quoi la table ne ferait que grandir.
+- **La rotation du jeton de rafraîchissement est stricte, et le rejeu fait tomber
+  toute la famille.** Le jeton présenté et le jeton d'accès qu'il accompagnait
+  cessent de valoir dès que leurs remplaçants sont émis ; présenter à nouveau un
+  jeton déjà tourné, ou un code déjà consommé, révoque tout ce qui est issu de la
+  même autorisation. C'est pour cela qu'un code consommé est désactivé plutôt que
+  supprimé : effacé, il deviendrait indiscernable d'un code inventé, et le rejeu
+  passerait pour une simple requête invalide.
+- **Les scopes d'un jeton sont recalculés à chaque vérification**, par
+  intersection avec ceux que le rôle du compte porte *maintenant*. Un jeton ne peut
+  donc ni élargir les droits de son porteur, ni survivre à une rétrogradation. La
+  direction est l'essentiel : reconstruire l'acteur depuis le rôle donnerait au
+  porteur tout ce que l'utilisateur détient, et le consentement n'aurait plus aucun
+  effet.
+- **Un compte désactivé invalide ses jetons au premier usage**, par la même règle
+  que pour les sessions web (§4) : le compte est relu à chaque vérification, et un
+  compte inactif rend un acteur anonyme. Il n'y a donc pas de liste de jetons à
+  révoquer un par un le jour où un accès se ferme.
+- **Un collaborateur ne peut pas ouvrir d'accès agent.** Son rôle ne porte pas le
+  scope `mcp`, et aucune combinaison de paramètres ne le lui donnera : le refus est
+  celui du compte, pas de la demande, et il s'affiche comme tel plutôt que de
+  repartir en erreur vers le client.
+- **Les refus ne renseignent pas.** Un jeton expiré, révoqué ou inconnu produit la
+  même erreur, et les messages de débogage de la bibliothèque restent au serveur :
+  distinguer ces cas apprendrait à qui essaie des jetons lesquels de ses essais
+  approchent.
+- **Les points de terminaison qu'aucun humain ne visite** — métadonnées,
+  enregistrement, jeton, révocation — échappent à l'authentification par session et
+  s'ouvrent à toutes les origines. C'est sans danger parce qu'aucun cookie ne les
+  accompagne : le navigateur n'attache pas la session d'Avanti à ces requêtes, et
+  ce qui autorise un client n'est pas son origine mais son PKCE. `/oauth/authorize`
+  n'en fait pas partie, et c'est tout l'intérêt : lui exige une session, puisque
+  c'est là que l'utilisateur consent.
+- **La clé HMAC est propre à l'instance** et arrive par la configuration
+  (`AVANTI_OAUTH_SECRET`, trente-deux octets au minimum, valeur d'exemple refusée
+  en production). En changer déconnecte d'un coup tous les agents autorisés — ce
+  qui est aussi le moyen de tout révoquer sans rien parcourir.
+
+## 6. La stack technique
 
 Chaque choix est arrêté. Les versions exactes vivent dans `go.mod` et le
 `Makefile`, pas ici — un document qui répète des numéros de version devient faux
@@ -351,7 +501,7 @@ proposée en service à des tiers doit publier ses modifications : l'utilisateur
 d'un Avanti hébergé par un tiers garde la capacité d'auditer ce qui tourne
 réellement.
 
-## 6. Le harnais de qualité
+## 7. Le harnais de qualité
 
 Tout est câblé dans le `Makefile`, avec des outils **épinglés à une version
 exacte et installés dans `./bin`**, de sorte que le contributeur et la CI
@@ -418,7 +568,7 @@ trous de test.
 sortie est un indicateur de la qualité des tests, pas un quality gate qui doit
 bloquer une fusion.
 
-## 7. Ce que ce document n'engage pas encore
+## 8. Ce que ce document n'engage pas encore
 
 Le socle applicatif et le domaine `identity` existent — `internal/platform`,
 `internal/identity`, `adapters/postgres`, `adapters/web` et `cmd/avanti` sont

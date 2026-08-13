@@ -8,7 +8,10 @@ Avanti — pilotage de la reconstruction d'une maison : devis, planning, finance
 configuration, applique ses migrations, sert une interface web et répond à ses
 sondes d'exploitation. **Les comptes et les accès fonctionnent** : on crée un
 compte en ligne de commande, on se connecte, la session tient, et le menu s'ajuste
-aux droits du rôle. Les quatre domaines métier — devis, planning, finances,
+aux droits du rôle. **Le serveur d'autorisation OAuth 2.1 est en place** : un
+agent peut déjà s'enregistrer, obtenir le consentement d'un propriétaire et
+recevoir un jeton, mais le serveur MCP qui consommera ce jeton arrive dans un lot
+ultérieur. Les quatre domaines métier — devis, planning, finances,
 documents — ne sont pas encore implémentés : le tableau de bord est un provisoire
 assumé. Rien n'est donc utilisable pour piloter un vrai chantier, mais la
 charpente est en place et vérifiée par la CI.
@@ -150,6 +153,43 @@ Un compte n'est jamais supprimé. `user disable` ferme l'accès et **coupe les
 sessions web déjà ouvertes** sur ce compte, sans attendre leur expiration ; les
 actions que le compte a signées continuent de le désigner.
 
+## Connecter un agent IA (MCP)
+
+**Section provisoire.** Le serveur MCP — les outils qu'un agent appellera — arrive
+dans un lot ultérieur. Ce qui existe déjà, et qui se configure dès maintenant,
+c'est le serveur d'autorisation OAuth 2.1 qui le protégera.
+
+Le modèle tient en une phrase : **chaque agent passe par OAuth avec le compte de
+son utilisateur**, jamais avec un compte machine ni une clé partagée. Un agent ne
+peut donc rien faire de plus que la personne qui l'a autorisé, et l'autorisation
+se retire sans toucher au compte. L'accès agent demande le scope `mcp`, que seul
+le rôle `proprietaire` porte : un `collaborateur` ne peut pas en ouvrir un.
+
+Une seule chose est à préparer : **`AVANTI_OAUTH_SECRET`**, obligatoire au
+démarrage. C'est la clé HMAC qui signe les codes d'autorisation et les jetons.
+Engendrez la vôtre, une fois pour toutes :
+
+```sh
+openssl rand -base64 32
+```
+
+Trente-deux octets au minimum. La valeur d'exemple de `.env.example` convient en
+développement et est refusée au démarrage si `AVANTI_ENV` vaut `production` :
+publiée dans ce dépôt, la garder reviendrait à n'avoir aucune clé. En changer
+déconnecte tous les agents autorisés, qui devront l'être à nouveau — c'est aussi
+la façon de tout révoquer d'un coup.
+
+Le document de découverte, lui, est déjà servi : qu'il réponde est le signe que le
+serveur d'autorisation est correctement monté.
+
+```sh
+curl -s http://localhost:8080/.well-known/oauth-authorization-server
+```
+
+Le flux, ses garde-fous et les décisions de sécurité sont détaillés dans
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), section « OAuth 2.1 et l'accès
+agent ».
+
 ## Commandes du binaire
 
 ```
@@ -187,8 +227,9 @@ internal/
   adapters/
     postgres/        Persistance
     web/             Interface humaine : routes, gabarits, CSS, HTMX vendoré,
-                     catalogue de traductions — tout embarqué dans le binaire
-    mcp/             Interface agent (MCP + OAuth 2.1)
+                     catalogue de traductions — tout embarqué dans le binaire ;
+                     le serveur d'autorisation OAuth 2.1 y est monté aussi
+    mcp/             Interface agent (MCP), consommatrice des jetons OAuth
     storage/         Stockage du contenu des documents
     mail/            Notifications sortantes
     export/          PDF assurance, CSV comptable, archive

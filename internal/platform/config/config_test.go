@@ -10,11 +10,18 @@ import (
 	"github.com/Romain-Badino/Avanti/internal/platform/config"
 )
 
-// validEnv est le plus petit environnement qui charge : seule la base de données
-// n'a pas de valeur par défaut raisonnable.
+// testOAuthSecret est une clé HMAC de test : elle a la longueur exigée et n'est
+// utilisée nulle part ailleurs.
+const testOAuthSecret = "cle-de-test-uniquement-pour-la-suite-de-tests"
+
+// validEnv est le plus petit environnement qui charge. Deux variables n'ont pas
+// de valeur par défaut raisonnable : la base de données, et la clé HMAC du
+// serveur d'autorisation — qu'aucune valeur engendrée au démarrage ne pourrait
+// remplacer, puisqu'elle doit survivre au redémarrage.
 func validEnv(overrides map[string]string) map[string]string {
 	env := map[string]string{
 		"AVANTI_DATABASE_URL": "postgres://avanti:change-me@localhost:5439/avanti?sslmode=disable",
+		"AVANTI_OAUTH_SECRET": testOAuthSecret,
 	}
 	for k, v := range overrides {
 		env[k] = v
@@ -66,6 +73,36 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if !filepath.IsAbs(cfg.DocumentsDir) {
 		t.Errorf("DocumentsDir = %q, doit être rendu absolu", cfg.DocumentsDir)
+	}
+	if string(cfg.OAuthSecret) != testOAuthSecret {
+		t.Errorf("OAuthSecret = %q, attendu la valeur fournie", cfg.OAuthSecret)
+	}
+}
+
+// TestLogValueHidesOAuthSecret vérifie que la clé HMAC ne sort jamais dans les
+// journaux, pas même tronquée : elle signe tous les jetons de l'instance, et un
+// préfixe divulgué réduirait de plusieurs ordres de grandeur le coût d'une
+// recherche.
+func TestLogValueHidesOAuthSecret(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(lookupFrom(validEnv(nil)))
+	if err != nil {
+		t.Fatalf("Load() a échoué : %v", err)
+	}
+
+	rendered := cfg.LogValue().String()
+
+	if strings.Contains(rendered, testOAuthSecret) {
+		t.Errorf("LogValue() divulgue la clé HMAC : %s", rendered)
+	}
+	// Un préfixe de huit caractères suffirait déjà à réduire l'espace de
+	// recherche : le test refuse aussi les divulgations partielles.
+	if prefix := testOAuthSecret[:8]; strings.Contains(rendered, prefix) {
+		t.Errorf("LogValue() divulgue un préfixe de la clé HMAC : %s", rendered)
+	}
+	if !strings.Contains(rendered, "oauth_secret_length") {
+		t.Errorf("LogValue() devrait tout de même dire la longueur de la clé : %s", rendered)
 	}
 }
 
@@ -230,6 +267,27 @@ func TestLoadRejects(t *testing.T) {
 			want: "AVANTI_DATABASE_URL",
 		},
 		{
+			name: "clé HMAC OAuth absente",
+			env:  map[string]string{"AVANTI_OAUTH_SECRET": ""},
+			want: "AVANTI_OAUTH_SECRET",
+		},
+		{
+			name: "clé HMAC OAuth trop courte",
+			env:  map[string]string{"AVANTI_OAUTH_SECRET": "trop-courte"},
+			want: "AVANTI_OAUTH_SECRET",
+		},
+		{
+			// La valeur d'exemple de .env.example passe en développement et échoue
+			// en production : c'est le seul contrôle de configuration qui dépende de
+			// l'environnement, et il vaut la peine d'être verrouillé par un test.
+			name: "valeur d'exemple de la clé HMAC OAuth en production",
+			env: map[string]string{
+				"AVANTI_ENV":          "production",
+				"AVANTI_OAUTH_SECRET": "change-me-remplacez-par-openssl-rand-base64-32",
+			},
+			want: "AVANTI_OAUTH_SECRET",
+		},
+		{
 			name: "environnement inconnu",
 			env:  map[string]string{"AVANTI_ENV": "staging"},
 			want: "AVANTI_ENV",
@@ -321,6 +379,7 @@ func TestLoadReportsEveryProblemAtOnce(t *testing.T) {
 
 	for _, want := range []string{
 		"AVANTI_DATABASE_URL",
+		"AVANTI_OAUTH_SECRET",
 		"AVANTI_ENV",
 		"AVANTI_LISTEN_ADDR",
 		"AVANTI_LOG_LEVEL",

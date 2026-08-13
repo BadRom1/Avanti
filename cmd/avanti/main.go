@@ -137,16 +137,24 @@ func serve(ctx context.Context, stderr io.Writer) error {
 	sessionStore := pgxstore.NewWithCleanupInterval(app.pool, web.SessionCleanupInterval)
 	defer sessionStore.StopCleanup()
 
+	// Le magasin OAuth suit le même principe que celui des sessions : il est
+	// choisi ici, et l'adapter web ne reçoit que les interfaces de fosite.
+	// C'est ce qui permet aux deux familles d'adapters de s'ignorer (R4).
 	site, err := web.New(web.Options{
-		Logger:   app.logger,
-		Build:    app.build,
-		Accounts: app.accounts,
-		Sessions: sessionStore,
-		BaseURL:  app.cfg.BaseURL,
+		Logger:       app.logger,
+		Build:        app.build,
+		Accounts:     app.accounts,
+		Sessions:     sessionStore,
+		BaseURL:      app.cfg.BaseURL,
+		OAuthStorage: app.oauthStore,
+		OAuthSecret:  app.cfg.OAuthSecret,
 	})
 	if err != nil {
 		return err
 	}
+
+	stopPurge := startOAuthPurge(ctx, app)
+	defer stopPurge()
 
 	httpServer, err := server.New(server.Options{
 		Config:  app.cfg,

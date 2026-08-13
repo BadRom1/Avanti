@@ -4,10 +4,12 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Romain-Badino/Avanti/internal/adapters/postgres"
+	"github.com/Romain-Badino/Avanti/internal/adapters/web"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/config"
@@ -32,6 +34,12 @@ type instance struct {
 	// accounts est le service du domaine identity, monté sur le dépôt PostgreSQL et
 	// le hacheur argon2id.
 	accounts *identity.AccountService
+
+	// oauthStore est le magasin du serveur d'autorisation. Il vit dans la famille
+	// postgres et sera injecté dans l'adapter web : c'est le point où les deux
+	// familles se rencontrent, et le seul endroit du dépôt où c'est permis (R4 de
+	// docs/ARCHITECTURE.md).
+	oauthStore *postgres.OAuthStore
 }
 
 // openInstance monte tout ce qui précède, dans l'ordre de ses dépendances.
@@ -76,13 +84,83 @@ func openInstance(ctx context.Context, stderr io.Writer) (*instance, func(), err
 		return nil, func() {}, err
 	}
 
+	oauthStore, err := postgres.NewOAuthStore(pool)
+	if err != nil {
+		pool.Close()
+		return nil, func() {}, err
+	}
+
 	return &instance{
-		cfg:      cfg,
-		logger:   logger,
-		build:    platform.Build(),
-		pool:     pool,
-		accounts: accounts,
+		cfg:        cfg,
+		logger:     logger,
+		build:      platform.Build(),
+		pool:       pool,
+		accounts:   accounts,
+		oauthStore: oauthStore,
 	}, pool.Close, nil
+}
+
+// oauthPurgeTimeout borne une passe de ménage. Elle est courte : la requête est
+// un DELETE indexé sur une table qui compte quelques milliers de lignes, et une
+// passe qui traînerait vaut mieux abandonnée — la suivante arrive dans l'heure.
+const oauthPurgeTimeout = 30 * time.Second
+
+// startOAuthPurge lance le ménage périodique des codes et jetons expirés, et
+// rend de quoi l'arrêter.
+//
+// Le ménage vit ici plutôt que dans l'adapter web parce que c'est cmd/avanti qui
+// décide de la vie du processus (R3 de docs/ARCHITECTURE.md) : lancer une
+// goroutine perpétuelle depuis une bibliothèque la rendrait impossible à arrêter
+// pour son appelant. C'est le même partage que pour le nettoyage des sessions,
+// dont pgxstore reçoit la période sans choisir quand elle commence.
+//
+// La fonction rendue est bloquante jusqu'à l'arrêt effectif : sans cela, le
+// processus pourrait fermer son pool de connexions pendant qu'une passe tourne
+// encore, et le journal se terminerait sur une erreur qui n'en est pas une.
+func startOAuthPurge(ctx context.Context, app *instance) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		ticker := time.NewTicker(web.OAuthPurgeInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				purgeOAuth(ctx, app)
+			}
+		}
+	}()
+
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
+// purgeOAuth exécute une passe de ménage.
+//
+// Un échec se journalise et ne remonte pas : ne pas avoir fait le ménage n'est
+// pas une raison d'arrêter de servir, et la passe suivante retentera.
+func purgeOAuth(ctx context.Context, app *instance) {
+	ctx, cancel := context.WithTimeout(ctx, oauthPurgeTimeout)
+	defer cancel()
+
+	removed, err := app.oauthStore.PurgeExpired(ctx, time.Now())
+	if err != nil {
+		app.logger.WarnContext(ctx, "purge des jetons OAuth expirés",
+			slog.String("error", err.Error()))
+		return
+	}
+	if removed > 0 {
+		app.logger.InfoContext(ctx, "jetons OAuth expirés supprimés",
+			slog.Int64("count", removed))
+	}
 }
 
 // applySchema rejoue les migrations manquantes, si la configuration le

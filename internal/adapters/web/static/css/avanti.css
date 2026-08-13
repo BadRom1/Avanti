@@ -377,3 +377,45 @@ button.button {
     color: var(--texte-doux);
     font-size: 0.9rem;
 }
+
+/* Identité du client sur la page de consentement.
+ *
+ * Même forme que .acces — libellé à gauche, valeur à droite — parce que les deux
+ * listes se lisent l'une après l'autre sur la même page. La valeur est en
+ * monospace : un identifiant de client se compare caractère par caractère, et
+ * une police proportionnelle rend cette comparaison pénible. */
+
+.identite {
+    list-style: none;
+    margin: var(--rythme) 0 0;
+    padding: 0;
+}
+
+.identite li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-block: 0.45rem;
+    border-top: 1px solid var(--trait);
+}
+
+.identite__libelle {
+    font-weight: 600;
+}
+
+.identite__valeur {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    overflow-wrap: anywhere;
+}
+
+/* Une première autorisation est le cas où il faut regarder : elle est mise en
+ * avant, alors qu'un client déjà autorisé s'énonce sobrement. */
+.identite__premiere {
+    color: var(--accent);
+}
+
+.identite__connu {
+    color: var(--texte-doux);
+}

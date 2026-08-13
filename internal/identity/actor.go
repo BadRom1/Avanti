@@ -35,6 +35,38 @@ func NewActor(userID ID, role Role) Actor {
 	return Actor{userID: userID, role: role, scopes: granted}
 }
 
+// NewActorWithScopes construit un acteur borné à une partie des scopes de son
+// rôle.
+//
+// C'est ce dont un porteur de jeton a besoin : un jeton OAuth ne porte que les
+// scopes consentis, qui sont souvent plus étroits que ceux du rôle. Le résultat
+// est l'*intersection* des deux, jamais leur réunion, et cette direction est
+// l'essentiel :
+//
+//   - un jeton ne peut pas élargir les droits de son porteur. Un jeton émis
+//     quand le compte était propriétaire ne rouvre rien après un passage en
+//     collaborateur, parce que l'intersection se recalcule à chaque
+//     vérification ;
+//   - un jeton ne peut pas non plus les usurper. Les scopes accordés arrivent
+//     d'une base de données, donc d'un endroit qu'un attaquant pourrait
+//     atteindre avant le code ; les filtrer par la table du domaine fait que
+//     même une ligne trafiquée ne donne rien que le rôle n'accorde déjà.
+//
+// Un scope inconnu de la table du rôle est ignoré silencieusement, pour la même
+// raison : il ne peut rien ouvrir, il n'y a donc rien à signaler.
+func NewActorWithScopes(userID ID, role Role, granted []Scope) Actor {
+	fromRole := NewActor(userID, role)
+
+	restricted := make(map[Scope]struct{}, len(granted))
+	for _, scope := range granted {
+		if fromRole.Allows(scope) {
+			restricted[scope] = struct{}{}
+		}
+	}
+
+	return Actor{userID: userID, role: role, scopes: restricted}
+}
+
 // UserID renvoie l'identifiant du compte porté par l'acteur. C'est cet
 // identifiant que les domaines métier consignent quand ils datent une action.
 func (a Actor) UserID() ID {

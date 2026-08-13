@@ -16,11 +16,17 @@
 // mot de passe, désactiver, lister. Il s'appuie sur deux ports, [UserRepository]
 // pour la persistance et [Hasher] pour le hachage.
 //
+// Un troisième port, [TokenVerifier], sert l'autre canal d'entrée : il traduit
+// un jeton d'accès en [Actor], pour un appelant qui présente un jeton plutôt
+// qu'une session. Le domaine n'en fournit aucune implémentation — c'est un
+// point d'entrée, pas un service — et n'a donc rien à savoir d'OAuth.
+//
 // # Frontières
 //
 // Ce package n'importe aucun autre domaine, aucun adapter, ni
 // internal/platform. Les autres domaines ne l'importent pas non plus : ils
 // reçoivent l'identité de l'appelant en paramètre, jamais en allant
-// l'interroger. La mécanique OAuth 2.1 n'est pas ici : c'est un adapter
-// (internal/adapters/mcp) qui la branche sur ce domaine.
+// l'interroger. La mécanique OAuth 2.1 n'est pas ici : elle vit dans
+// internal/adapters/web, qui est la surface HTTP du serveur d'autorisation, et
+// qui implémente [TokenVerifier] pour le compte du futur adapter MCP.
 package identity

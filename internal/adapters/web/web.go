@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/alexedwards/scs/v2"
 
@@ -49,10 +50,24 @@ type Options struct {
 	// politique du cookie, elle, est décidée ici — voir
 	// [newSessionManager].
 	Sessions scs.Store
-	// BaseURL est l'URL publique de l'instance. Obligatoire. Elle sert à deux
-	// choses : décider du drapeau Secure du cookie, et déclarer l'origine de
-	// confiance de la protection contre les requêtes intersites.
+	// BaseURL est l'URL publique de l'instance. Obligatoire. Elle sert à trois
+	// choses : décider du drapeau Secure du cookie, déclarer l'origine de
+	// confiance de la protection contre les requêtes intersites, et servir
+	// d'issuer au serveur d'autorisation OAuth.
 	BaseURL *url.URL
+	// OAuthStorage est le magasin du serveur d'autorisation. Obligatoire.
+	//
+	// Comme Sessions, c'est une interface — celles de fosite — et non une
+	// implémentation : cmd/avanti choisit le magasin PostgreSQL et l'injecte,
+	// ce qui laisse cet adapter ignorant de pgx.
+	OAuthStorage OAuthStorage
+	// OAuthSecret est la clé HMAC qui signe codes et jetons. Obligatoire, et au
+	// moins [oauthSecretMinLength] octets.
+	OAuthSecret []byte
+	// Clock sert d'horloge au serveur d'autorisation. nil signifie time.Now ;
+	// les tests en injectent une pour ne pas avoir à attendre l'expiration d'un
+	// jeton.
+	Clock func() time.Time
 }
 
 // Handler sert l'interface humaine d'Avanti.
@@ -66,6 +81,7 @@ type Handler struct {
 	accounts *identity.AccountService
 	sessions *scs.SessionManager
 	limiter  *loginLimiter
+	oauth    *oauthServer
 }
 
 // New construit l'adapter : catalogue de traductions, gabarits compilés une
@@ -83,6 +99,8 @@ func New(opts Options) (*Handler, error) {
 		return nil, errors.New("web : magasin de sessions manquant")
 	case opts.BaseURL == nil:
 		return nil, errors.New("web : URL publique manquante")
+	case opts.OAuthStorage == nil:
+		return nil, errors.New("web : magasin OAuth manquant")
 	}
 
 	catalog, err := NewCatalog()
@@ -91,6 +109,11 @@ func New(opts Options) (*Handler, error) {
 	}
 
 	pages, err := parsePages()
+	if err != nil {
+		return nil, err
+	}
+
+	oauth, err := newOAuthServer(opts.OAuthSecret, opts.OAuthStorage, opts.BaseURL, opts.Clock)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +127,7 @@ func New(opts Options) (*Handler, error) {
 		accounts: opts.Accounts,
 		sessions: newSessionManager(opts.Sessions, opts.BaseURL),
 		limiter:  newLimiter(nil),
+		oauth:    oauth,
 	}
 
 	h.mux.HandleFunc("GET /{$}", h.handleHome)
@@ -111,6 +135,7 @@ func New(opts Options) (*Handler, error) {
 	h.mux.HandleFunc("POST "+loginPath, h.handleLogin)
 	h.mux.HandleFunc("POST "+logoutPath, h.handleLogout)
 	h.mux.Handle("GET "+staticPrefix, http.StripPrefix(staticPrefix, staticFileServer()))
+	h.mountOAuth()
 	h.mux.HandleFunc("/", h.handleNotFound)
 
 	root, err := h.mountMiddleware(opts.BaseURL)
@@ -171,6 +196,25 @@ func crossOriginProtection(baseURL *url.URL) (*http.CrossOriginProtection, error
 		return nil, fmt.Errorf("web : origine de confiance %q refusée : %w", origin, err)
 	}
 
+	// Les points de terminaison machine du serveur d'autorisation en sont
+	// dispensés, et c'est un raisonnement à faire explicitement plutôt qu'une
+	// commodité.
+	//
+	// La protection intersites défend une session contre un site tiers qui la
+	// ferait agir à l'insu de son porteur. Ces trois routes n'ont pas de session
+	// à défendre : elles n'en lisent aucune, n'en posent aucune, et ce qui les
+	// autorise est le vérificateur PKCE ou l'identifiant du client. Les protéger
+	// n'ajouterait donc rien, tandis que les laisser sous la règle casserait le
+	// cas normal — un agent qui appelle depuis son serveur, ou une page web d'un
+	// autre domaine, se verrait refuser sa demande de jeton.
+	//
+	// /oauth/authorize n'y figure pas : c'est un formulaire, soumis par un
+	// navigateur porteur de session, et il a exactement besoin de cette
+	// protection.
+	for _, path := range oauthMachinePaths() {
+		protection.AddInsecureBypassPattern(path)
+	}
+
 	return protection, nil
 }
 
@@ -195,6 +239,8 @@ const (
 	pageLogin         = "login.gohtml"
 	pageNotFound      = "not_found.gohtml"
 	pageInternalError = "internal_error.gohtml"
+	pageOAuthConsent  = "oauth_consent.gohtml"
+	pageOAuthRefused  = "oauth_refused.gohtml"
 )
 
 // render écrit la page demandée, et bascule sur la page d'erreur si le rendu

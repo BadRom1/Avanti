@@ -37,4 +37,10 @@ var (
 	// ErrUnknownUser signale l'absence du compte demandé. C'est l'erreur
 	// que rend un [UserRepository] sur une lecture sans résultat.
 	ErrUnknownUser = errors.New("identity : compte inconnu")
+
+	// ErrInvalidToken couvre tout ce qui empêche un jeton d'autoriser quoi que ce
+	// soit : absent, illisible, expiré, révoqué, ou rattaché à un compte
+	// désactivé. Une seule erreur pour tous ces cas, délibérément — voir
+	// [TokenVerifier].
+	ErrInvalidToken = errors.New("identity : jeton d'accès invalide")
 )

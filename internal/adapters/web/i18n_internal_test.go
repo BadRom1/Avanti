@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/Romain-Badino/Avanti/internal/identity"
 )
 
 func TestNewCatalogLoadsFrench(t *testing.T) {
@@ -162,6 +164,31 @@ func TestEveryTemplateMessageExists(t *testing.T) {
 	for _, id := range ids {
 		if got := tr.T(id); got == "!"+id+"!" {
 			t.Errorf("le gabarit %s utilise %q, absent du catalogue français", used[id], id)
+		}
+	}
+}
+
+// TestEveryScopeHasLabel exige un libellé traduit pour chaque scope du domaine.
+//
+// Il complète [TestEveryTemplateMessageExists], qui ne voit que les
+// identifiants écrits en clair dans les gabarits. Les libellés de scopes sont
+// calculés depuis le nom du scope : le parcours des gabarits ne les trouve pas,
+// et sans ce test, ajouter un scope au domaine ferait apparaître un marqueur
+// « !oauth.scope.…! » sur la page de consentement — c'est-à-dire à l'endroit
+// précis où l'utilisateur doit comprendre ce qu'il accorde.
+func TestEveryScopeHasLabel(t *testing.T) {
+	t.Parallel()
+
+	catalog, err := NewCatalog()
+	if err != nil {
+		t.Fatalf("NewCatalog() a échoué : %v", err)
+	}
+	tr := catalog.Translator("fr")
+
+	for _, scope := range identity.AllScopes() {
+		id := scopeMessageID(scope.String())
+		if got := tr.T(id); got == "!"+id+"!" {
+			t.Errorf("le scope %q n'a pas de libellé : %q est absent du catalogue français", scope, id)
 		}
 	}
 }

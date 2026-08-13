@@ -1,0 +1,18 @@
+{{- /*
+Refus d'autorisation pour cause de rôle. Le compte connecté existe et sa session
+est valide : c'est sa table de scopes qui n'ouvre pas l'accès agent IA, et aucune
+manipulation de la demande n'y changera rien.
+
+La page explique donc à qui s'adresser plutôt que de proposer de réessayer.
+*/ -}}
+{{ define "title" }}{{ .T "oauth.refus.title" }}{{ end }}
+
+{{ define "content" }}
+<section class="card card--etroite" aria-labelledby="titre-refus">
+    <h1 id="titre-refus">{{ .T "oauth.refus.heading" }}</h1>
+
+    <p class="avis avis--erreur" role="alert">{{ .T "oauth.refus.message" }}</p>
+
+    <p class="note">{{ .T "oauth.refus.detail" }}</p>
+</section>
+{{ end }}

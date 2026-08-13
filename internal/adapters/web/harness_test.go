@@ -102,12 +102,17 @@ func (d *memRepo) List(_ context.Context) ([]identity.User, error) {
 	return accounts, nil
 }
 
+// oauthSecretTest est la clé HMAC des tests. Sa seule contrainte est de faire au
+// moins trente-deux octets, comme celle de production.
+const oauthSecretTest = "cle-hmac-de-test-sans-aucun-usage-reel"
+
 // site est le gestionnaire web sous test, avec ce qu'il faut pour agir sur son
 // état — désactiver un compte, par exemple.
 type site struct {
 	handler  *web.Handler
 	accounts *identity.AccountService
 	repo     *memRepo
+	oauth    *memOAuthStore
 }
 
 // newSite monte l'adapter avec trois comptes : un propriétaire, un
@@ -156,18 +161,22 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 		t.Fatalf("URL de test illisible : %v", err)
 	}
 
+	oauthStore := newMemOAuthStore()
+
 	handler, err := web.New(web.Options{
-		Logger:   logging.Discard(),
-		Build:    platform.BuildInfo{Version: "v0.0.0-test"},
-		Accounts: accounts,
-		Sessions: memstore.New(),
-		BaseURL:  baseURL,
+		Logger:       logging.Discard(),
+		Build:        platform.BuildInfo{Version: "v0.0.0-test"},
+		Accounts:     accounts,
+		Sessions:     memstore.New(),
+		BaseURL:      baseURL,
+		OAuthStorage: oauthStore,
+		OAuthSecret:  []byte(oauthSecretTest),
 	})
 	if err != nil {
 		t.Fatalf("web.New() échoué : %v", err)
 	}
 
-	return &site{handler: handler, accounts: accounts, repo: repo}
+	return &site{handler: handler, accounts: accounts, repo: repo, oauth: oauthStore}
 }
 
 // disable ferme le compte portant cet email.

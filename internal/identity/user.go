@@ -82,3 +82,16 @@ func (u User) Actor() Actor {
 	}
 	return NewActor(u.ID, u.Role)
 }
+
+// ActorWithScopes rend l'acteur du compte borné aux scopes accordés, pour un
+// appelant qui présente un jeton plutôt qu'une session.
+//
+// Comme [User.Actor], un compte désactivé rend l'acteur anonyme : une
+// désactivation coupe les jetons en cours au premier usage, sans qu'il faille
+// aller les révoquer un par un.
+func (u User) ActorWithScopes(granted []Scope) Actor {
+	if !u.Active {
+		return Actor{}
+	}
+	return NewActorWithScopes(u.ID, u.Role, granted)
+}
