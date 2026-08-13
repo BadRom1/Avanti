@@ -1,0 +1,18 @@
+{{ define "title" }}{{ .T "home.title" }}{{ end }}
+
+{{ define "content" }}
+<h1>{{ .T "home.heading" }}</h1>
+
+<p class="lede">{{ .T "home.intro" }}</p>
+
+<section class="card" aria-labelledby="prochaines-etapes">
+    <h2 id="prochaines-etapes">{{ .T "home.next_steps_heading" }}</h2>
+    <ul class="checklist">
+        <li>{{ .T "home.next_step_identity" }}</li>
+        <li>{{ .T "home.next_step_devis" }}</li>
+        <li>{{ .T "home.next_step_planning" }}</li>
+        <li>{{ .T "home.next_step_finance" }}</li>
+        <li>{{ .T "home.next_step_documents" }}</li>
+    </ul>
+</section>
+{{ end }}

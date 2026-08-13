@@ -1,0 +1,54 @@
+{{- /*
+Gabarit commun à toutes les pages. Chaque page fournit deux blocs : « title »
+pour l'onglet du navigateur, « content » pour le corps. Aucune chaîne visible
+n'est écrite en dur ici — tout passe par .T, donc par le catalogue.
+*/ -}}
+<!DOCTYPE html>
+<html lang="{{ .Lang }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ template "title" . }} · {{ .T "app.name" }}</title>
+    <link rel="stylesheet" href="{{ .Asset "/static/css/avanti.css" }}">
+    <script src="{{ .Asset "/static/vendor/htmx.min.js" }}" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#contenu">{{ .T "layout.skip_to_content" }}</a>
+
+<header class="site-header">
+    <div class="wrap site-header__inner">
+        <a class="brand" href="/">
+            <span class="brand__name">{{ .T "app.name" }}</span>
+            <span class="brand__tagline">{{ .T "app.tagline" }}</span>
+        </a>
+        <nav class="nav" aria-label="{{ .T "layout.main_navigation" }}">
+            <ul class="nav__list">
+                {{- range .Nav }}
+                <li>
+                    {{- if .Available }}
+                    <a class="nav__link" href="{{ .Href }}"
+                       {{ if .Current }}aria-current="page"{{ end }}>{{ .Label }}</a>
+                    {{- else }}
+                    <span class="nav__link nav__link--pending"
+                          title="{{ $.T "nav.pending_hint" }}">{{ .Label }}</span>
+                    {{- end }}
+                </li>
+                {{- end }}
+            </ul>
+        </nav>
+    </div>
+</header>
+
+<main id="contenu" class="wrap site-main">
+    {{ template "content" . }}
+</main>
+
+<footer class="site-footer">
+    <div class="wrap site-footer__inner">
+        <span>{{ .T "footer.version" "Version" .Version }}</span>
+        <span>{{ .T "footer.license" }}</span>
+        <a href="https://github.com/Romain-Badino/Avanti">{{ .T "footer.source" }}</a>
+    </div>
+</footer>
+</body>
+</html>

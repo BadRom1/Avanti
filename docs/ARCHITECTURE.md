@@ -94,6 +94,20 @@ connexions, cycle de vie du serveur HTTP, informations de build. C'est la couche
 la plus basse, et rien ne dépend d'elle en retour. Elle ne doit jamais devenir le
 fourre-tout où atterrit le code que personne ne sait où mettre.
 
+Concrètement, un paquet par responsabilité, tous sous la même règle `depguard` :
+`config` (variables `AVANTI_`, validées d'un bloc au démarrage), `logging`
+(`slog`), `db` (pool `pgx` et sonde de disponibilité), `migrate` (SQL embarqué,
+rejoué par `goose`), `server` (délais d'attente, intergiciels, sondes
+d'exploitation, arrêt gracieux). Deux conséquences directes de R3 méritent d'être
+notées, parce qu'elles ne sont pas mécanisables :
+
+- **le serveur ne connaît pas les pages qu'il sert.** Les routes applicatives lui
+  arrivent en `http.Handler`, que `cmd/avanti` lui passe. C'est ce qui lui permet
+  d'ignorer `adapters/web` ;
+- **le socle ne décide pas de la vie du processus.** `Serve` s'arrête sur
+  annulation de contexte ; le gestionnaire de `SIGINT` et `SIGTERM` est installé
+  par `cmd/avanti`, seul endroit légitime pour trancher quand le programme meurt.
+
 ### R4 — Seul `cmd/` assemble
 
 `cmd/avanti` est **le seul endroit du dépôt** qui a le droit de connaître à la
@@ -309,10 +323,25 @@ bloquer une fusion.
 
 ## 7. Ce que ce document n'engage pas encore
 
-Le dépôt est un squelette : les packages de domaine ne contiennent aujourd'hui
-que leur `doc.go`. Les règles ci-dessus sont donc écrites **avant** le code
-qu'elles gouvernent, et c'est délibéré — le harnais qui les applique est déjà
-vert, ce qui fait qu'aucun code ne pourra les enfreindre par accident.
+Le socle applicatif existe — `internal/platform`, `adapters/web` et `cmd/avanti`
+sont écrits et testés — mais **les cinq packages de domaine ne contiennent
+toujours que leur `doc.go`**. Les règles ci-dessus ont donc été écrites avant le
+code qu'elles gouvernent, et c'est délibéré : le harnais qui les applique était
+vert avant la première ligne de socle, ce qui fait qu'aucun code n'a pu les
+enfreindre par accident en chemin.
+
+Deux règles de fonctionnement se sont ajoutées avec le socle, et valent pour la
+suite :
+
+- **une migration publiée ne se modifie plus.** Les fichiers SQL sont embarqués
+  dans le binaire et rejoués à chaque démarrage ; réécrire une migration déjà
+  appliquée quelque part rendrait deux instances divergentes sans que rien ne le
+  signale. On en ajoute une autre.
+- **toute chaîne affichée passe par le catalogue de traductions**, dès maintenant
+  et même si le français est la seule langue fournie. Un test relie les
+  identifiants employés par les gabarits au catalogue : en oublier un fait
+  échouer la suite. Seules les sondes `/healthz` et `/readyz` y échappent, parce
+  que leur lecteur est un orchestrateur et non un humain.
 
 Restent à trancher au fil de l'implémentation : le format d'échange des vues
 transverses entre domaines et adapter web, la stratégie de pagination, et la

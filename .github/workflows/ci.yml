@@ -41,8 +41,14 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
 
-    # Postgres est démarré dès maintenant : les tests d'intégration des adapters
-    # arrivent avec le socle applicatif et trouveront la base déjà là.
+    # Les tests d'intégration du socle (migrations, /readyz) ont besoin d'un
+    # PostgreSQL réel. Sur un poste de développement, ils lèvent leur propre
+    # conteneur via testcontainers ; ici, AVANTI_TEST_DATABASE_URL les branche sur
+    # ce service, car démarrer un conteneur depuis un runner qui en est déjà un
+    # ajouterait une couche pour rien. Sans base ni Docker, ils se sautent.
+    #
+    # Chaque test se taille sa propre base dans ce serveur : POSTGRES_USER est
+    # superutilisateur dans l'image officielle, donc CREATE DATABASE passe.
     services:
       postgres:
         image: postgres:18-alpine

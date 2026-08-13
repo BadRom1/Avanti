@@ -1,0 +1,50 @@
+# PostgreSQL de développement pour Avanti.
+#
+# Cette pile n'existe que pour le poste du contributeur : elle n'est ni un
+# modèle de déploiement, ni ce que la CI utilise. La production tourne avec un
+# PostgreSQL administré à part et le seul binaire avanti — voir README.
+#
+#   make dev-db-up     démarre la base et attend qu'elle réponde
+#   make dev-db-down   l'arrête, en gardant les données
+#   make dev-db-reset  l'arrête et jette le volume
+#
+# Le port hôte est 5439, et non 5432 : les postes de développement ont souvent
+# déjà un PostgreSQL sur le port standard, et une collision se manifesterait par
+# des erreurs déroutantes — l'application se connecterait à la mauvaise base.
+# L'écoute est restreinte à 127.0.0.1 : cette base ne doit jamais être joignable
+# depuis le réseau local.
+
+name: avanti-dev
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: avanti-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: avanti
+      # Mot de passe de développement, sans valeur : il n'est jamais utilisé
+      # ailleurs et la base n'écoute que sur la boucle locale. Il doit rester
+      # identique à celui de .env.example.
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: avanti
+      # Encodage et collation figés : sans cela, la base hérite de la locale de
+      # l'image et le tri des chaînes diffère d'un poste à l'autre.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "127.0.0.1:5439:5432"
+    volumes:
+      # L'image PostgreSQL 18 place ses données dans /var/lib/postgresql/<major>
+      # et déclare le volume un cran au-dessus : c'est ce chemin-là qu'il faut
+      # monter pour que les données survivent à un `docker compose down`.
+      - avanti-dev-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avanti -d avanti"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  avanti-dev-pgdata:
+    name: avanti-dev-pgdata

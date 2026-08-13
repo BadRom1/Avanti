@@ -1,0 +1,18 @@
+# Bibliothèques front vendorées dans le binaire.
+#
+# Elles sont copiées ici volontairement : Avanti ne charge rien depuis un CDN.
+# Une instance auto-hébergée ne doit dépendre d'aucun tiers pour s'afficher, et
+# le code exécuté dans le navigateur doit être auditable dans le dépôt.
+#
+# Mise à jour : télécharger le fichier depuis la source ci-dessous, remplacer
+# l'ancien, mettre à jour la version et l'empreinte, puis relancer `make ci`.
+
+htmx.min.js
+  version : 2.0.10
+  source  : https://unpkg.com/htmx.org@2.0.10/dist/htmx.min.js
+  sha256  : 71ea67185bfa8c98c39d31717c6fce5d852370fcdfd129db4543774d3145c0de
+  amont   : https://github.com/bigskysoftware/htmx
+  licence : BSD 2-Clause
+  note    : 2.0.10 est la dernière version du canal stable (dist-tag npm
+            « latest » au 13 août 2026). La branche 4.0 n'existe qu'en
+            préversion sous le dist-tag « next » et n'est pas retenue.

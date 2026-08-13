@@ -1,0 +1,11 @@
+{{ define "title" }}{{ .T "error.internal.title" }}{{ end }}
+
+{{ define "content" }}
+<h1>{{ .T "error.internal.heading" }}</h1>
+
+<p class="lede">{{ .T "error.internal.message" }}</p>
+
+{{ if .RequestID }}
+<p><code>{{ .T "error.internal.request_id" "RequestID" .RequestID }}</code></p>
+{{ end }}
+{{ end }}

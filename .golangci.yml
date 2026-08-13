@@ -78,14 +78,34 @@ linters:
         - jalon
         - artisan
         # Français courant homographe de fautes anglaises.
+        - absolue
+        - accumule
         - analyse
+        - attribue
+        - attributs
+        - catalogue
+        - catalogues
+        - commandes
+        - confortable
         - connexion
         - connexions
+        - correspondant
         - demande
         - demandes
+        - enveloppe
+        - exemple
         - persistance
         - pointeur
         - programme
+        - trafic
+        - transforme
+        - utilise
+        # Fragments, pas des mots : misspell coupe sur les caractères accentués,
+        # « intermédiaire » lui parvient donc en « interm » + « diaire » et
+        # « démarrage » en « d » + « marrage ». Ne pas les « corriger » en mots
+        # entiers — la forme tronquée est celle que misspell compare.
+        - interm
+        - marrage
 
     nolintlint:
       require-explanation: true
@@ -127,10 +147,13 @@ linters:
     #
     #   Une bibliothèque tierce : l'ajouter au `allow` des seules règles qui en
     #   ont besoin. Un domaine n'accepte qu'une bibliothèque métier sans effet
-    #   de bord, et c'est volontairement une décision visible en revue. Les
-    #   fichiers _test.go suivent la règle de leur répertoire : une aide de
-    #   test (testify et consorts) s'ajoute exactement au même endroit que le
-    #   reste, dans la règle du répertoire concerné.
+    #   de bord, et c'est volontairement une décision visible en revue.
+    #
+    #   Une aide réservée aux tests (testcontainers, testify et consorts) :
+    #   l'ajouter à la règle `<nom>-test` du répertoire, bornée aux fichiers
+    #   *_test.go — la créer sur le modèle de `socle-platform-test` si elle
+    #   n'existe pas encore. Le code de production ne peut ainsi pas
+    #   l'importer, même par inadvertance.
     #
     #   Un domaine : créer sa règle `domaine-<nom>`, puis l'ajouter au `allow`
     #   des six règles `adapter-*`. En oublier une ne crée pas de brèche : le
@@ -211,12 +234,37 @@ linters:
           list-mode: strict
           files:
             - "${base-path}/internal/platform/**"
+            - "!${base-path}/internal/platform/**/*_test.go"
           allow:
             - $gostd
             - github.com/Romain-Badino/Avanti/internal/platform
+            # pgx : le pilote PostgreSQL retenu (docs/ARCHITECTURE.md §5). Le
+            # sous-paquet stdlib sert à présenter le pool en *sql.DB, seul
+            # dialecte que goose comprenne.
+            - github.com/jackc/pgx/v5
+            # goose : moteur de migrations, alimenté par un embed.FS.
+            - github.com/pressly/goose/v3
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
               desc: "platform est le socle technique (R3) — il ne connaît ni domaine ni adapter, la dépendance va toujours dans l'autre sens"
+
+        # Les tests du socle voient, en plus, testcontainers pour lever un
+        # PostgreSQL jetable. La règle est bornée aux *_test.go : un import de
+        # testcontainers dans du code de production est rejeté par le lint, au
+        # lieu de reposer sur la vigilance en revue.
+        socle-platform-test:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/platform/**/*_test.go"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/platform
+            - github.com/jackc/pgx/v5
+            - github.com/pressly/goose/v3
+            - github.com/testcontainers/testcontainers-go
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "les tests du socle suivent R3 comme le code qu'ils testent"
 
         # --- Adapters : une règle par famille (R4)
         #
@@ -256,6 +304,11 @@ linters:
             - github.com/Romain-Badino/Avanti/internal/identity
             - github.com/Romain-Badino/Avanti/internal/planning
             - github.com/Romain-Badino/Avanti/internal/platform
+            # go-i18n : catalogue de messages, seule façon d'écrire du texte
+            # affiché (docs/ARCHITECTURE.md §5).
+            - github.com/nicksnyder/go-i18n/v2
+            # golang.org/x/text : les étiquettes de langue que go-i18n manipule.
+            - golang.org/x/text/language
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
               desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"

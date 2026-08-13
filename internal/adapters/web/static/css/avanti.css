@@ -1,0 +1,229 @@
+/* Feuille de style d'Avanti.
+ *
+ * Écrite à la main, embarquée dans le binaire, sans framework ni build front :
+ * c'est la contrepartie de la promesse « rien à installer d'autre que le binaire
+ * et Postgres ». Elle tient volontairement en un fichier court — une interface
+ * de gestion se lit mieux sobre que décorée.
+ *
+ * Repères : mise en page par flux normal, une seule largeur maximale, et des
+ * couleurs déclarées en variables pour que le thème sombre ne soit qu'une
+ * redéfinition.
+ */
+
+:root {
+    color-scheme: light dark;
+
+    --fond: #fbfaf8;
+    --fond-eleve: #ffffff;
+    --trait: #e2ddd4;
+    --texte: #1f1d1a;
+    --texte-doux: #57534c;
+    --accent: #8a5a2b;
+    --accent-contraste: #ffffff;
+    --focus: #1b6ac9;
+
+    --largeur: 60rem;
+    --rythme: 1.25rem;
+    --rayon: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --fond: #171614;
+        --fond-eleve: #201f1c;
+        --trait: #35322d;
+        --texte: #ece8e1;
+        --texte-doux: #a8a29a;
+        --accent: #d59a5f;
+        --accent-contraste: #171614;
+        --focus: #7db4ff;
+    }
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: var(--fond);
+    color: var(--texte);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    font-size: 1rem;
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.wrap {
+    width: 100%;
+    max-width: var(--largeur);
+    margin-inline: auto;
+    padding-inline: var(--rythme);
+}
+
+/* Accessibilité : le lien d'évitement ne se montre qu'au clavier, et le focus
+ * reste visible partout — un formulaire de saisie de devis se remplit souvent
+ * sans souris. */
+.skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    background: var(--accent);
+    color: var(--accent-contraste);
+    padding: 0.5rem 1rem;
+    z-index: 10;
+}
+
+.skip-link:focus {
+    left: 0;
+}
+
+:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+}
+
+/* En-tête */
+
+.site-header {
+    background: var(--fond-eleve);
+    border-bottom: 1px solid var(--trait);
+}
+
+.site-header__inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--rythme);
+    padding-block: 0.9rem;
+}
+
+.brand {
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+}
+
+.brand__name {
+    font-size: 1.35rem;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    color: var(--accent);
+}
+
+.brand__tagline {
+    font-size: 0.8rem;
+    color: var(--texte-doux);
+}
+
+.nav {
+    margin-left: auto;
+}
+
+.nav__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.nav__link {
+    color: var(--texte-doux);
+    text-decoration: none;
+    padding-block: 0.2rem;
+    border-bottom: 2px solid transparent;
+}
+
+.nav__link:hover {
+    color: var(--texte);
+}
+
+.nav__link[aria-current="page"] {
+    color: var(--texte);
+    border-bottom-color: var(--accent);
+}
+
+/* Une section pas encore écrite s'affiche, mais ne se clique pas. */
+.nav__link--pending {
+    opacity: 0.55;
+    cursor: default;
+}
+
+/* Corps */
+
+.site-main {
+    flex: 1;
+    padding-block: calc(var(--rythme) * 2);
+}
+
+h1 {
+    font-size: 1.9rem;
+    line-height: 1.25;
+    margin-block: 0 var(--rythme);
+}
+
+h2 {
+    font-size: 1.15rem;
+    margin-block: 0 0.75rem;
+}
+
+.lede {
+    font-size: 1.05rem;
+    color: var(--texte-doux);
+    max-width: 46rem;
+}
+
+.card {
+    background: var(--fond-eleve);
+    border: 1px solid var(--trait);
+    border-radius: var(--rayon);
+    padding: var(--rythme);
+    margin-top: calc(var(--rythme) * 1.5);
+    max-width: 46rem;
+}
+
+.checklist {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--texte-doux);
+}
+
+.checklist li + li {
+    margin-top: 0.35rem;
+}
+
+.button {
+    display: inline-block;
+    background: var(--accent);
+    color: var(--accent-contraste);
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: var(--rayon);
+}
+
+a {
+    color: var(--accent);
+}
+
+/* Pied de page */
+
+.site-footer {
+    border-top: 1px solid var(--trait);
+    background: var(--fond-eleve);
+    font-size: 0.85rem;
+    color: var(--texte-doux);
+}
+
+.site-footer__inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding-block: 1rem;
+}

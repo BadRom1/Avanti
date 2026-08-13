@@ -1,0 +1,9 @@
+{{ define "title" }}{{ .T "error.not_found.title" }}{{ end }}
+
+{{ define "content" }}
+<h1>{{ .T "error.not_found.heading" }}</h1>
+
+<p class="lede">{{ .T "error.not_found.message" }}</p>
+
+<p><a class="button" href="/">{{ .T "error.not_found.back" }}</a></p>
+{{ end }}

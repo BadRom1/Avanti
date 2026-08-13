@@ -4,10 +4,12 @@ Avanti — pilotage de la reconstruction d'une maison : devis, planning, finance
 
 ## Statut
 
-**En construction.** Le dépôt contient aujourd'hui le squelette et le harnais de
-qualité : la structure hexagonale, les règles de frontières vérifiées
-automatiquement, la chaîne de lint, de sécurité et de tests, et la CI. Les
-domaines métier ne sont pas encore implémentés. Rien n'est utilisable en l'état.
+**En construction.** Le socle applicatif tourne : l'application démarre, lit sa
+configuration, applique ses migrations, sert une interface web et répond à ses
+sondes d'exploitation. Les domaines métier — devis, planning, finances,
+documents, identité — ne sont pas encore implémentés : la page d'accueil est un
+provisoire assumé. Rien n'est donc utilisable pour piloter un vrai chantier, mais
+la charpente est en place et vérifiée par la CI.
 
 ## Stack
 
@@ -31,14 +33,24 @@ choix et leurs motifs sont détaillés dans [docs/ARCHITECTURE.md](docs/ARCHITEC
 - Aucun outil de qualité à installer à la main : `make tools` s'en charge et les
   place dans `./bin`, à des versions épinglées.
 
-## Démarrage
+## Démarrage rapide
 
 ```sh
 git clone https://github.com/Romain-Badino/Avanti.git
 cd Avanti
-make tools    # installe l'outillage épinglé dans ./bin
-make hooks    # active les hooks git du dépôt
-make ci       # vérifie que tout est vert
+make tools          # installe l'outillage épinglé dans ./bin
+make hooks          # active les hooks git du dépôt
+cp .env.example .env
+make dev-db-up      # démarre le PostgreSQL de développement
+make run            # lance l'application
+```
+
+L'interface répond alors sur <http://localhost:8080>. Deux sondes complètent la
+page d'accueil :
+
+```sh
+curl -i http://localhost:8080/healthz   # le processus répond (sans toucher à la base)
+curl -i http://localhost:8080/readyz    # la base répond aussi
 ```
 
 `make hooks` exécute `git config core.hooksPath .githooks`. **Ce réglage est
@@ -46,12 +58,37 @@ local à votre clone** : git ne l'installe pas tout seul, chaque contributeur do
 lancer la commande une fois. Le hook `pre-commit` rejoue alors la recherche de
 secrets, l'analyse statique et les tests rapides avant chaque commit.
 
+## Configuration
+
+Tout passe par des variables d'environnement préfixées `AVANTI_`, décrites une par
+une dans [.env.example](.env.example). Seule `AVANTI_DATABASE_URL` n'a pas de
+valeur par défaut. Une valeur invalide fait échouer le démarrage en nommant la
+variable fautive — toutes à la fois s'il y en a plusieurs, pour éviter la série
+de redémarrages.
+
+`make run` charge `.env` s'il existe ; en production, ces variables se passent par
+l'environnement du service (unité systemd, conteneur…) et `.env` n'a pas lieu
+d'être. Il n'entre jamais dans l'historique git.
+
+## Base de développement
+
+[compose.yaml](compose.yaml) ne lève que PostgreSQL, sur le **port hôte 5439** et
+la boucle locale — le port standard 5432 est souvent déjà pris sur un poste de
+développement, et une collision se manifesterait par une application connectée à
+la mauvaise base. Ce n'est pas un modèle de déploiement : en production, Avanti
+est un binaire face à un PostgreSQL administré à part.
+
 ## Cibles make
 
 | Cible | Effet |
 |---|---|
 | `make help` | Liste les cibles disponibles |
 | `make build` | Compile le binaire dans `./bin/avanti` |
+| `make run` | Lance l'application (charge `.env` s'il existe) |
+| `make dev-db-up` | Démarre le PostgreSQL de développement et attend qu'il réponde |
+| `make dev-db-down` | L'arrête, en conservant les données |
+| `make dev-db-reset` | L'arrête et jette le volume de données |
+| `make dev-db-psql` | Ouvre un `psql` sur la base de développement |
 | `make test` | Tests avec détecteur de course et couverture |
 | `make lint` | Analyse statique, **frontières hexagonales comprises** |
 | `make fmt` | Reformate le code (gofumpt + goimports) |
@@ -62,6 +99,28 @@ secrets, l'analyse statique et les tests rapides avant chaque commit.
 | `make tools` | Installe l'outillage épinglé dans `./bin` |
 | `make hooks` | Active les hooks git du dépôt |
 | `make clean` | Supprime `./bin` et les artefacts de couverture |
+
+## Commandes du binaire
+
+```
+avanti serve      démarre le serveur HTTP (commande par défaut)
+avanti version    affiche l'identité du binaire (équivalent : avanti --version)
+```
+
+## Tests
+
+`make test` couvre tout. Les tests d'intégration du socle (migrations, `/readyz`)
+ont besoin d'un vrai PostgreSQL et l'obtiennent de trois façons, dans cet ordre :
+
+1. `AVANTI_TEST_DATABASE_URL`, si la variable est renseignée — c'est le chemin de
+   la CI, où un service PostgreSQL tourne déjà ;
+2. un conteneur jetable levé par [testcontainers](https://golang.testcontainers.org/),
+   sinon — le chemin par défaut sur un poste de développement, rien à préparer ;
+3. faute des deux, ils se **sautent** proprement : `make test` reste vert sans
+   Docker.
+
+Chaque test d'intégration se taille sa propre base, pour que « les migrations
+s'appliquent sur une base vierge » soit vérifié sur une base réellement vierge.
 
 ## Structure du dépôt
 
@@ -74,13 +133,21 @@ internal/
   document/          Domaine : pièces du dossier et leur classement
   identity/          Domaine transverse : comptes, rôles, scopes
   adapters/
-    postgres/        Persistance et migrations
-    web/             Interface humaine (HTTP, templates, HTMX)
+    postgres/        Persistance
+    web/             Interface humaine : routes, gabarits, CSS, HTMX vendoré,
+                     catalogue de traductions — tout embarqué dans le binaire
     mcp/             Interface agent (MCP + OAuth 2.1)
     storage/         Stockage du contenu des documents
     mail/            Notifications sortantes
     export/          PDF assurance, CSV comptable, archive
-  platform/          Socle technique : config, logs, base, serveur
+  platform/          Socle technique, un paquet par responsabilité :
+    config/          Lecture et validation de l'environnement AVANTI_
+    logging/         Journal structuré (slog)
+    db/              Pool PostgreSQL (pgx) et sonde de disponibilité
+    migrate/         Migrations SQL embarquées (goose)
+    server/          Serveur HTTP, intergiciels, sondes, arrêt gracieux
+compose.yaml         PostgreSQL de développement (port hôte 5439)
+.env.example         Configuration commentée, à copier en .env
 docs/ARCHITECTURE.md Règles de frontières et choix de stack
 .githooks/           Hook pre-commit (activé par make hooks)
 ```

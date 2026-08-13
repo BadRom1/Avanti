@@ -39,7 +39,7 @@ LDFLAGS := -s -w \
 help: ## Affiche cette aide
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 		| sort \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 # --- Build & tests ----------------------------------------------------------
 
@@ -63,6 +63,50 @@ cover: test ## Ouvre le rapport de couverture HTML
 .PHONY: tidy
 tidy: ## Remet go.mod et go.sum d'aplomb
 	go mod tidy
+
+# --- Développement local ----------------------------------------------------
+#
+# La base de développement vit dans compose.yaml : PostgreSQL seul, sur le port
+# hôte 5439 et la boucle locale. Elle n'est ni un modèle de déploiement, ni ce
+# qu'utilise la CI.
+
+COMPOSE := docker compose -f $(ROOT)/compose.yaml
+
+.PHONY: dev-db-up
+dev-db-up: ## Démarre le PostgreSQL de développement et attend qu'il réponde
+	$(COMPOSE) up -d --wait
+	@echo "PostgreSQL de développement prêt sur 127.0.0.1:5439."
+
+.PHONY: dev-db-down
+dev-db-down: ## Arrête le PostgreSQL de développement (les données sont conservées)
+	$(COMPOSE) down
+
+.PHONY: dev-db-reset
+dev-db-reset: ## Arrête le PostgreSQL de développement et jette ses données
+	$(COMPOSE) down --volumes
+	@echo "Volume avanti-dev-pgdata supprimé."
+
+.PHONY: dev-db-psql
+dev-db-psql: ## Ouvre un psql sur la base de développement
+	$(COMPOSE) exec postgres psql -U avanti -d avanti
+
+# `make run` charge .env s'il existe, pour que la configuration locale n'ait pas
+# à être exportée à la main dans chaque shell. Les variables déjà présentes dans
+# l'environnement l'emportent : `AVANTI_LOG_LEVEL=debug make run` fonctionne.
+#
+# set -a exporte automatiquement ce que le fichier définit ; le sous-shell évite
+# que ces variables ne fuient dans les autres cibles.
+.PHONY: run
+run: ## Lance l'application (charge .env s'il existe)
+	@set -a; \
+	if [ -f $(ROOT)/.env ]; then \
+		echo "Chargement de .env"; \
+		. $(ROOT)/.env; \
+	else \
+		echo "Aucun .env : copiez .env.example si le démarrage échoue." >&2; \
+	fi; \
+	set +a; \
+	go run -ldflags '$(LDFLAGS)' $(ROOT)/cmd/avanti serve
 
 # --- Qualité ----------------------------------------------------------------
 

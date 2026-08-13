@@ -1,0 +1,38 @@
+{
+  "app.name": "Avanti",
+  "app.tagline": "Pilotage de la reconstruction",
+
+  "layout.skip_to_content": "Aller au contenu principal",
+  "layout.main_navigation": "Navigation principale",
+
+  "nav.dashboard": "Tableau de bord",
+  "nav.devis": "Devis",
+  "nav.planning": "Planning",
+  "nav.finance": "Finances",
+  "nav.documents": "Documents",
+  "nav.pending_hint": "Section à venir",
+
+  "home.title": "Tableau de bord",
+  "home.heading": "Avanti — tableau de bord à venir",
+  "home.intro": "L'application est en cours de construction. Le socle technique est en place : configuration, base de données, migrations et serveur HTTP répondent déjà.",
+  "home.next_steps_heading": "Ce qui arrive ensuite",
+  "home.next_step_identity": "Comptes, rôles et accès",
+  "home.next_step_devis": "Demandes de devis et comparaison des offres",
+  "home.next_step_planning": "Étapes, jalons et détection des retards",
+  "home.next_step_finance": "Factures, acomptes et suivi assurance",
+  "home.next_step_documents": "Pièces du dossier et classement",
+
+  "footer.version": "Version {{.Version}}",
+  "footer.license": "Distribué sous licence AGPL-3.0.",
+  "footer.source": "Code source",
+
+  "error.not_found.title": "Page introuvable",
+  "error.not_found.heading": "Cette page n'existe pas",
+  "error.not_found.message": "L'adresse demandée ne correspond à aucune page d'Avanti. Vérifiez le lien, ou revenez au tableau de bord.",
+  "error.not_found.back": "Revenir au tableau de bord",
+
+  "error.internal.title": "Erreur interne",
+  "error.internal.heading": "Quelque chose s'est mal passé",
+  "error.internal.message": "L'incident a été enregistré dans le journal du serveur. Réessayez dans un instant ; si le problème persiste, citez l'identifiant de requête ci-dessous.",
+  "error.internal.request_id": "Identifiant de requête : {{.RequestID}}"
+}
