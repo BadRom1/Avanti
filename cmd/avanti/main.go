@@ -16,12 +16,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/alexedwards/scs/pgxstore"
+
 	"github.com/Romain-Badino/Avanti/internal/adapters/web"
 	"github.com/Romain-Badino/Avanti/internal/platform"
-	"github.com/Romain-Badino/Avanti/internal/platform/config"
 	"github.com/Romain-Badino/Avanti/internal/platform/db"
-	"github.com/Romain-Badino/Avanti/internal/platform/logging"
-	"github.com/Romain-Badino/Avanti/internal/platform/migrate"
 	"github.com/Romain-Badino/Avanti/internal/platform/server"
 )
 
@@ -29,6 +28,7 @@ import (
 const (
 	commandServe   = "serve"
 	commandVersion = "version"
+	commandUser    = "user"
 )
 
 func main() {
@@ -75,6 +75,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return printVersion(stdout)
 	case commandServe:
 		return serve(ctx, stderr)
+	case commandUser:
+		// flags.Args()[1:] : ce qui suit « user » appartient à la sous-commande, et
+		// non au jeu de drapeaux global.
+		return runUser(ctx, flags.Args()[1:], stdout, stderr)
 	default:
 		usage(stderr, flags)
 		return fmt.Errorf("commande inconnue : %q", command)
@@ -86,6 +90,7 @@ func usage(out io.Writer, flags *flag.FlagSet) {
 
 Commandes :
   serve     Démarre le serveur HTTP (commande par défaut)
+  user      Gère les comptes (« avanti user » pour le détail)
   version   Affiche l'identité du binaire puis quitte
 
 La configuration passe par des variables d'environnement préfixées AVANTI_ ;
@@ -112,56 +117,42 @@ func printVersion(stdout io.Writer) error {
 // serve assemble l'application et la sert jusqu'à l'annulation de ctx.
 //
 // L'ordre de montage est celui des dépendances : configuration, journal, base,
-// schéma, interface, serveur. Chaque étape échoue bruyamment plutôt que de
-// laisser démarrer une instance à moitié fonctionnelle.
+// schéma, domaines, sessions, interface, serveur. Chaque étape échoue bruyamment
+// plutôt que de laisser démarrer une instance à moitié fonctionnelle.
 func serve(ctx context.Context, stderr io.Writer) error {
-	cfg, err := config.LoadFromEnv()
+	app, cleanup, err := openInstance(ctx, stderr)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 
-	// Les journaux vont sur la sortie d'erreur : la sortie standard reste
-	// disponible pour ce qu'une commande produit réellement.
-	logger := logging.New(stderr, cfg)
-	build := platform.Build()
+	app.logger.Info("démarrage d'Avanti",
+		slog.String("version", app.build.Version),
+		slog.String("commit", app.build.Commit),
+		slog.Any("config", app.cfg))
 
-	logger.Info("démarrage d'Avanti",
-		slog.String("version", build.Version),
-		slog.String("commit", build.Commit),
-		slog.Any("config", cfg))
+	// Le magasin de sessions est choisi ici, et lui seul connaît pgx : l'adapter
+	// web ne reçoit que l'interface scs.Store, ce qui le laisse ignorant du
+	// pilote de base (R4).
+	sessionStore := pgxstore.NewWithCleanupInterval(app.pool, web.SessionCleanupInterval)
+	defer sessionStore.StopCleanup()
 
-	pool, err := db.Open(ctx, logger, cfg.DatabaseURL, cfg.DBConnectTimeout)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-
-	if cfg.MigrateOnStart {
-		// goose ne parle que database/sql : on emprunte une vue sur le pool le
-		// temps de la migration, puis on la rend — le pool reste ouvert.
-		sqlDB := db.StdlibDB(pool)
-		migrateErr := migrate.Up(ctx, logger, sqlDB)
-		if closeErr := sqlDB.Close(); closeErr != nil {
-			logger.Warn("fermeture de la vue database/sql du pool",
-				slog.String("error", closeErr.Error()))
-		}
-		if migrateErr != nil {
-			return migrateErr
-		}
-	} else {
-		logger.Warn("migrations désactivées au démarrage, le schéma doit déjà être à jour")
-	}
-
-	site, err := web.New(web.Options{Logger: logger, Build: build})
+	site, err := web.New(web.Options{
+		Logger:   app.logger,
+		Build:    app.build,
+		Accounts: app.accounts,
+		Sessions: sessionStore,
+		BaseURL:  app.cfg.BaseURL,
+	})
 	if err != nil {
 		return err
 	}
 
 	httpServer, err := server.New(server.Options{
-		Config:  cfg,
-		Logger:  logger,
+		Config:  app.cfg,
+		Logger:  app.logger,
 		Handler: site,
-		Ready:   func(ctx context.Context) error { return db.Ping(ctx, pool) },
+		Ready:   func(ctx context.Context) error { return db.Ping(ctx, app.pool) },
 	})
 	if err != nil {
 		return err

@@ -191,8 +191,25 @@ Le **vocabulaire métier reste en français** dans les identifiants exportés :
 ubiquitaire du projet — celui des documents papier échangés avec les entreprises
 et l'assurance. Traduire « devis » en « quote » créerait une double traduction
 permanente entre le code et la réalité, et c'est exactement ce que le langage
-ubiquitaire sert à éviter. Tout le reste — verbes, helpers, types techniques —
-est en anglais.
+ubiquitaire sert à éviter.
+
+La frontière, pour qu'elle ne se discute pas à chaque revue :
+
+- **en anglais, tous les identifiants techniques** — types, fonctions, méthodes,
+  constantes, variables, champs de structure, noms de tests et noms de fichiers.
+  `Hasher`, `NormalizeEmail`, `sessionCookieName`, `login.go` ;
+- **en français, deux choses seulement** : le vocabulaire métier listé ci-dessus,
+  et tout ce que l'utilisateur voit ou saisit — routes (`/connexion`,
+  `/deconnexion`), noms de champs de formulaire (`mot_de_passe`), valeurs de rôle
+  et de scope stockées en base (`proprietaire`, `collaborateur`), clés et textes
+  du catalogue i18n, sorties de la CLI, flags (`--nom`, `--role`) et messages
+  d'erreur ;
+- **les commentaires et la documentation restent en français**, y compris quand
+  ils citent un identifiant anglais.
+
+Un nom technique français est donc un écart à corriger, pas un choix de style ;
+une chaîne française visible de l'utilisateur ne se traduit pas en anglais sous
+prétexte d'uniformité.
 
 ### `devis` — la consultation des artisans
 
@@ -236,6 +253,71 @@ l'importent pas. Ils reçoivent l'identité de l'appelant en paramètre (un
 identifiant d'acteur et ses scopes), plutôt que d'aller l'interroger. La
 mécanique OAuth 2.1 elle-même n'est pas dans le domaine : c'est un adapter qui la
 branche dessus.
+
+#### Le modèle `Actor` et les scopes
+
+Deux types séparent ce qui est stocké de ce qui autorise, et cette séparation est
+la clé de R1 :
+
+- **`User`** est le compte tel qu'il vit en base : email, nom d'affichage,
+  empreinte de mot de passe, rôle, activité, horodatages. Il ne sort pas
+  d'`identity` et de son adapter de persistance ;
+- **`Actor`** est ce que **tout le reste de l'application reçoit** pour autoriser
+  une action : un identifiant de compte et un jeu de scopes, rien de plus. Ses
+  champs sont privés et il se construit à partir d'un rôle, de sorte que personne
+  ne puisse s'ajouter un scope en chemin. Son unique question utile est
+  `Allows(scope)`.
+
+Les domaines métier recevront donc `identity.Actor` **en paramètre** de leurs cas
+d'usage. Ils n'importent pas `identity` pour autant : c'est l'adapter appelant —
+web aujourd'hui, MCP demain — qui obtient l'acteur et le transmet. Un service de
+devis reste ainsi testable sans base de comptes, et R1 tient sans exception.
+
+Les scopes sont des constantes typées de la forme `<domaine>:read` et
+`<domaine>:write` pour les quatre domaines métier, plus un scope `mcp` distinct :
+un droit sur les devis ne dit rien du canal par lequel on l'exerce.
+
+Les rôles n'en sont pas la somme libre. Une **table unique** dans le domaine dit
+quels scopes chaque rôle porte, et c'est la seule source de vérité — aucun code
+ne doit déduire un droit d'un test « si le rôle est propriétaire » :
+
+| Rôle | Scopes | Accès agent IA |
+|---|---|---|
+| `proprietaire` | les huit scopes de domaine, plus `mcp` | oui |
+| `collaborateur` | `devis:read`, `devis:write`, `planning:read`, `planning:write` | non |
+
+Pas de permission réglable compte par compte : à deux propriétaires et un
+intervenant extérieur, des scopes à l'unité coûteraient une interface
+d'administration, des combinaisons à tester, et l'occasion de se tromper — pour un
+besoin qui n'existe pas. Un troisième profil s'ajouterait en une constante et une
+ligne de table.
+
+Deux conséquences valent d'être notées, parce qu'elles ne se devinent pas :
+
+- **un compte désactivé donne un acteur anonyme**, sans aucun scope. La
+  désactivation vaut retrait des droits même si un chemin d'appel oubliait de
+  vérifier l'activité du compte ;
+- **l'interface web relit le compte à chaque requête** plutôt que de mettre le
+  rôle en session. Une désactivation ou un changement de rôle prend donc effet
+  immédiatement, sans attendre l'expiration des sessions ouvertes. Le prix est une
+  lecture par requête sur une table de trois lignes.
+
+#### Le garde-fou contre la force brute
+
+Le formulaire de connexion compte les échecs en mémoire et bloque temporairement
+au-delà d'un seuil. La clé de comptage est le couple **(compte visé, adresse IP de
+la connexion TCP)** : `X-Forwarded-For` est ignoré, parce qu'un en-tête qu'un
+client peut écrire librement offre au premier attaquant venu un compteur neuf à
+chaque requête.
+
+La conséquence est à connaître avant de déployer : **derrière un reverse proxy,
+tout le trafic arrive avec l'adresse du proxy**, la moitié « IP » de la clé
+devient constante et la limite dégénère en simple limite par compte — ce qui reste
+utile contre le bourrinage d'un mot de passe, mais ne distingue plus les
+attaquants des utilisateurs légitimes. Si un proxy de confiance devient le mode de
+déploiement standard, il faudra le déclarer explicitement en configuration (liste
+d'adresses de proxys de confiance) et n'accepter `X-Forwarded-For` que de leur
+part, plutôt que de faire confiance à l'en-tête par défaut.
 
 ## 5. La stack technique
 
@@ -311,11 +393,26 @@ moment d'écrire ce document :
 a été vérifié fonctionnel sur Go 1.26 — sur un package témoin, il génère bien ses
 mutants et les classe correctement.
 
-Une réserve à connaître : gremlins déduit le délai d'exécution d'un mutant de la
-durée de la suite de référence. Sur une suite rapide, le délai calculé est si
-court que **tous** les mutants sortent en `TIMED OUT` au lieu d'être jugés — ce
-qui a effectivement été observé, puis corrigé par `--timeout-coefficient 10`
-figé dans le `Makefile`.
+Deux réserves à connaître, toutes deux observées puis contournées dans le
+`Makefile` :
+
+- gremlins déduit le délai d'exécution d'un mutant de la durée de la suite de
+  référence. Sur une suite rapide, le délai calculé est si court que **tous** les
+  mutants sortent en `TIMED OUT` au lieu d'être jugés — corrigé par
+  `--timeout-coefficient 10` ;
+- gremlins v0.6.0 **n'étend pas le motif récursif `...` de Go**.
+  `gremlins unleash ./internal/...` affiche « No results to report » et n'analyse
+  rien, sans le moindre message d'erreur. C'est la panne la plus désagréable pour
+  une cible dont on lit la sortie et non le code de retour : elle ressemble à « il
+  n'y a rien à signaler ». La cible énumère donc les domaines un par un, ce qui
+  coûte une ligne par nouveau domaine et se voit en revue.
+
+À titre de repère, sur `identity` — le premier domaine écrit — `make mutation`
+rend 47 mutants tués sur 47 jugés, soit 100 % d'efficacité pour 85 % de couverture
+de mutateurs. Les 8 mutants classés « not covered » portent sur des expressions de
+`switch` et sur une constante calculée à la compilation, que gremlins attribue à
+des lignes qu'il croit non couvertes : ce sont des artefacts de l'outil, pas des
+trous de test.
 
 `make mutation` reste **hors de `make ci`** : trop lent pour chaque push, et sa
 sortie est un indicateur de la qualité des tests, pas un quality gate qui doit
@@ -323,15 +420,16 @@ bloquer une fusion.
 
 ## 7. Ce que ce document n'engage pas encore
 
-Le socle applicatif existe — `internal/platform`, `adapters/web` et `cmd/avanti`
-sont écrits et testés — mais **les cinq packages de domaine ne contiennent
+Le socle applicatif et le domaine `identity` existent — `internal/platform`,
+`internal/identity`, `adapters/postgres`, `adapters/web` et `cmd/avanti` sont
+écrits et testés — mais **les quatre packages de domaine métier ne contiennent
 toujours que leur `doc.go`**. Les règles ci-dessus ont donc été écrites avant le
 code qu'elles gouvernent, et c'est délibéré : le harnais qui les applique était
 vert avant la première ligne de socle, ce qui fait qu'aucun code n'a pu les
 enfreindre par accident en chemin.
 
-Deux règles de fonctionnement se sont ajoutées avec le socle, et valent pour la
-suite :
+Quatre règles de fonctionnement se sont ajoutées avec le socle et l'identité, et
+valent pour la suite :
 
 - **une migration publiée ne se modifie plus.** Les fichiers SQL sont embarqués
   dans le binaire et rejoués à chaque démarrage ; réécrire une migration déjà
@@ -342,6 +440,22 @@ suite :
   identifiants employés par les gabarits au catalogue : en oublier un fait
   échouer la suite. Seules les sondes `/healthz` et `/readyz` y échappent, parce
   que leur lecteur est un orchestrateur et non un humain.
+- **une route web est protégée par défaut.** L'intergiciel d'authentification
+  énumère les exceptions publiques — `/connexion` et `/static/` — et exige une
+  session partout ailleurs. C'est le sens de l'erreur qui décide de cette forme :
+  oublier d'inscrire une nouvelle route dans les exceptions la rend protégée, donc
+  visible tout de suite ; oublier de poser un décorateur « protégé » sur une
+  nouvelle route l'ouvrirait à tout le monde, en silence.
+- **la protection CSRF est celle de la bibliothèque standard.**
+  `net/http.CrossOriginProtection`, apparu en Go 1.25, refuse toute requête non
+  sûre dont l'en-tête `Sec-Fetch-Site` annonce une origine tierce ou dont
+  l'`Origin` ne correspond pas. Elle remplace un jeton synchronisé maison — sa
+  réserve en session, sa rotation, ses cas particuliers — sans remplacer
+  `SameSite=Lax` sur le cookie de session, qui reste posé : les deux couvrent la
+  même attaque par des chemins différents, et un client qui échapperait à l'une
+  devrait encore passer l'autre. L'URL publique de l'instance est déclarée origine
+  de confiance, sans quoi un reverse proxy qui réécrit `Host` ferait refuser des
+  requêtes légitimes.
 
 Restent à trancher au fil de l'implémentation : le format d'échange des vues
 transverses entre domaines et adapter web, la stratégie de pagination, et la

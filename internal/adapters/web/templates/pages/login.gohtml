@@ -1,0 +1,46 @@
+{{- /*
+Formulaire de connexion. C'est la seule page qu'un visiteur non authentifié
+obtienne : tout le reste redirige ici.
+
+Aucun jeton CSRF dans le formulaire, et c'est volontaire — la protection vient de
+net/http.CrossOriginProtection et de SameSite=Lax sur le cookie de session. Voir
+protectionIntersites dans web.go.
+*/ -}}
+{{ define "title" }}{{ .T "connexion.title" }}{{ end }}
+
+{{ define "content" }}
+{{- $d := .Data }}
+<section class="card card--etroite" aria-labelledby="titre-connexion">
+    <h1 id="titre-connexion">{{ .T "connexion.heading" }}</h1>
+
+    {{- if $d.LoggedOut }}
+    <p class="avis avis--succes" role="status">{{ .T "connexion.deconnecte" }}</p>
+    {{- end }}
+
+    {{- if $d.Error }}
+    <p class="avis avis--erreur" role="alert">{{ $d.Error }}</p>
+    {{- end }}
+
+    <form class="formulaire" method="post" action="/connexion">
+        {{- if $d.Next }}
+        <input type="hidden" name="suite" value="{{ $d.Next }}">
+        {{- end }}
+
+        <div class="champ">
+            <label for="email">{{ .T "connexion.champ.email" }}</label>
+            <input id="email" name="email" type="email" value="{{ $d.Email }}"
+                   autocomplete="username" inputmode="email" required autofocus>
+        </div>
+
+        <div class="champ">
+            <label for="mot_de_passe">{{ .T "connexion.champ.mot_de_passe" }}</label>
+            <input id="mot_de_passe" name="mot_de_passe" type="password"
+                   autocomplete="current-password" required>
+        </div>
+
+        <button class="button" type="submit">{{ .T "connexion.soumettre" }}</button>
+    </form>
+
+    <p class="note">{{ .T "connexion.aide_compte" }}</p>
+</section>
+{{ end }}

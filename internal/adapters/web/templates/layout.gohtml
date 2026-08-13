@@ -21,6 +21,10 @@ n'est écrite en dur ici — tout passe par .T, donc par le catalogue.
             <span class="brand__name">{{ .T "app.name" }}</span>
             <span class="brand__tagline">{{ .T "app.tagline" }}</span>
         </a>
+
+        {{- /* Navigation et bloc de session n'existent que pour une personne
+        connectée : sur la page de connexion, il n'y a rien à naviguer. */}}
+        {{- if .User }}
         <nav class="nav" aria-label="{{ .T "layout.main_navigation" }}">
             <ul class="nav__list">
                 {{- range .Nav }}
@@ -36,6 +40,17 @@ n'est écrite en dur ici — tout passe par .T, donc par le catalogue.
                 {{- end }}
             </ul>
         </nav>
+
+        <div class="session">
+            <span class="session__identite">
+                <span class="session__nom">{{ .User.DisplayName }}</span>
+                <span class="session__role">{{ .User.Role }}</span>
+            </span>
+            <form class="session__sortie" method="post" action="{{ .LogoutPath }}">
+                <button class="button button--discret" type="submit">{{ .T "layout.deconnexion" }}</button>
+            </form>
+        </div>
+        {{- end }}
     </div>
 </header>
 

@@ -1,14 +1,54 @@
 {{ define "title" }}{{ .T "home.title" }}{{ end }}
 
 {{ define "content" }}
-<h1>{{ .T "home.heading" }}</h1>
+<h1>{{ .T "home.heading" "Nom" .User.DisplayName }}</h1>
 
 <p class="lede">{{ .T "home.intro" }}</p>
+
+<section class="card" aria-labelledby="acces">
+    <h2 id="acces">{{ .T "home.acces_heading" }}</h2>
+    <p>{{ .T "home.acces_intro" "Role" .User.Role }}</p>
+
+    {{- /* Le menu par scopes : chaque domaine n'apparaît que si la personne
+    connectée détient le droit de lecture correspondant. Les scopes sont nommés
+    par leur valeur, comme dans les jetons MCP. */}}
+    <ul class="acces">
+        {{- if .Can "devis:read" }}
+        <li>
+            <span class="acces__domaine">{{ .T "nav.devis" }}</span>
+            <span class="acces__droit">{{ if .Can "devis:write" }}{{ .T "acces.lecture_ecriture" }}{{ else }}{{ .T "acces.lecture" }}{{ end }}</span>
+        </li>
+        {{- end }}
+        {{- if .Can "planning:read" }}
+        <li>
+            <span class="acces__domaine">{{ .T "nav.planning" }}</span>
+            <span class="acces__droit">{{ if .Can "planning:write" }}{{ .T "acces.lecture_ecriture" }}{{ else }}{{ .T "acces.lecture" }}{{ end }}</span>
+        </li>
+        {{- end }}
+        {{- if .Can "finance:read" }}
+        <li>
+            <span class="acces__domaine">{{ .T "nav.finance" }}</span>
+            <span class="acces__droit">{{ if .Can "finance:write" }}{{ .T "acces.lecture_ecriture" }}{{ else }}{{ .T "acces.lecture" }}{{ end }}</span>
+        </li>
+        {{- end }}
+        {{- if .Can "document:read" }}
+        <li>
+            <span class="acces__domaine">{{ .T "nav.documents" }}</span>
+            <span class="acces__droit">{{ if .Can "document:write" }}{{ .T "acces.lecture_ecriture" }}{{ else }}{{ .T "acces.lecture" }}{{ end }}</span>
+        </li>
+        {{- end }}
+        {{- if .Can "mcp" }}
+        <li>
+            <span class="acces__domaine">{{ .T "acces.mcp" }}</span>
+            <span class="acces__droit">{{ .T "acces.mcp_detail" }}</span>
+        </li>
+        {{- end }}
+    </ul>
+</section>
 
 <section class="card" aria-labelledby="prochaines-etapes">
     <h2 id="prochaines-etapes">{{ .T "home.next_steps_heading" }}</h2>
     <ul class="checklist">
-        <li>{{ .T "home.next_step_identity" }}</li>
         <li>{{ .T "home.next_step_devis" }}</li>
         <li>{{ .T "home.next_step_planning" }}</li>
         <li>{{ .T "home.next_step_finance" }}</li>

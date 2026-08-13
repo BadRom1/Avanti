@@ -227,3 +227,153 @@ a {
     gap: 1rem;
     padding-block: 1rem;
 }
+
+/* Session : identité de la personne connectée et sortie, dans l'en-tête. */
+
+.session {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-left: auto;
+    font-size: 0.85rem;
+}
+
+/* La navigation garde son margin-left auto quand elle est seule ; dès que le
+ * bloc de session est là, c'est lui qui pousse à droite et la navigation revient
+ * au flux, collée au titre. */
+.nav + .session {
+    margin-left: 0;
+}
+
+.session__identite {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.3;
+    text-align: right;
+}
+
+.session__nom {
+    font-weight: 600;
+}
+
+.session__role {
+    color: var(--texte-doux);
+    font-size: 0.78rem;
+}
+
+.session__sortie {
+    margin: 0;
+}
+
+.button--discret {
+    background: transparent;
+    color: var(--texte-doux);
+    border: 1px solid var(--trait);
+    padding: 0.3rem 0.7rem;
+    font: inherit;
+    cursor: pointer;
+}
+
+.button--discret:hover {
+    color: var(--texte);
+    border-color: var(--texte-doux);
+}
+
+/* Formulaires */
+
+.card--etroite {
+    max-width: 26rem;
+}
+
+.formulaire {
+    display: flex;
+    flex-direction: column;
+    gap: var(--rythme);
+    margin-top: var(--rythme);
+}
+
+.champ {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.champ label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--texte-doux);
+}
+
+.champ input {
+    font: inherit;
+    color: var(--texte);
+    background: var(--fond);
+    border: 1px solid var(--trait);
+    border-radius: var(--rayon);
+    padding: 0.5rem 0.65rem;
+}
+
+.champ input:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+    border-color: var(--focus);
+}
+
+button.button {
+    border: 0;
+    font: inherit;
+    cursor: pointer;
+}
+
+/* Avis : un message adressé à la personne, pas un contenu de la page. */
+
+.avis {
+    border-radius: var(--rayon);
+    border: 1px solid var(--trait);
+    padding: 0.6rem 0.8rem;
+    margin-top: var(--rythme);
+    font-size: 0.9rem;
+}
+
+/* La couleur ne porte jamais l'information seule : le rôle ARIA (alert ou
+ * status) dit déjà de quoi il s'agit à un lecteur d'écran, et le texte se lit
+ * sans elle. */
+.avis--erreur {
+    border-left: 3px solid #b3261e;
+}
+
+.avis--succes {
+    border-left: 3px solid #2e7d32;
+}
+
+.note {
+    font-size: 0.85rem;
+    color: var(--texte-doux);
+    margin-bottom: 0;
+}
+
+/* Récapitulatif des accès, sur le tableau de bord. */
+
+.acces {
+    list-style: none;
+    margin: var(--rythme) 0 0;
+    padding: 0;
+}
+
+.acces li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-block: 0.45rem;
+    border-top: 1px solid var(--trait);
+}
+
+.acces__domaine {
+    font-weight: 600;
+}
+
+.acces__droit {
+    color: var(--texte-doux);
+    font-size: 0.9rem;
+}

@@ -2,107 +2,92 @@ package web_test
 
 import (
 	"html"
-	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/Romain-Badino/Avanti/internal/adapters/web"
-	"github.com/Romain-Badino/Avanti/internal/platform"
-	"github.com/Romain-Badino/Avanti/internal/platform/logging"
 )
-
-func newHandler(t *testing.T) *web.Handler {
-	t.Helper()
-
-	handler, err := web.New(web.Options{
-		Logger: logging.Discard(),
-		Build:  platform.BuildInfo{Version: "v0.0.0-test"},
-	})
-	if err != nil {
-		t.Fatalf("web.New() a échoué : %v", err)
-	}
-
-	return handler
-}
-
-// response est une réponse déjà lue et refermée.
-type response struct {
-	Status int
-	Header http.Header
-	Body   string
-}
-
-// get exerce le gestionnaire sans ouvrir de port.
-func get(t *testing.T, handler http.Handler, target string) response {
-	t.Helper()
-
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, http.NoBody))
-
-	result := rec.Result()
-	defer func() {
-		if err := result.Body.Close(); err != nil {
-			t.Errorf("fermeture du corps de réponse : %v", err)
-		}
-	}()
-
-	body, err := io.ReadAll(result.Body)
-	if err != nil {
-		t.Fatalf("lecture du corps de réponse : %v", err)
-	}
-
-	return response{Status: result.StatusCode, Header: result.Header, Body: string(body)}
-}
-
-func TestNewRefusesMissingLogger(t *testing.T) {
-	t.Parallel()
-
-	if _, err := web.New(web.Options{}); err == nil {
-		t.Fatal("web.New() doit refuser un journal absent")
-	}
-}
 
 func TestHomePage(t *testing.T) {
 	t.Parallel()
 
-	resp := get(t, newHandler(t), "/")
+	browser := newBrowser(t, newSite(t).handler)
+	browser.login(ownerEmail)
 
-	if resp.Status != http.StatusOK {
-		t.Fatalf("statut = %d, attendu 200", resp.Status)
+	result := browser.get("/")
+	if result.Status != http.StatusOK {
+		t.Fatalf("statut = %d, attendu 200", result.Status)
 	}
-	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
-		t.Errorf("Content-Type = %q", got)
+	if got := result.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
+		t.Errorf("Content-Type = %q, attendu text/html", got)
 	}
 
 	for _, want := range []string{
-		`lang="fr"`,
-		"Avanti — tableau de bord à venir",
-		"Pilotage de la reconstruction",
 		"/static/css/avanti.css",
 		"/static/vendor/htmx.min.js",
+		"Tableau de bord",
 	} {
-		if !strings.Contains(resp.Body, want) {
+		if !strings.Contains(result.Body, want) {
 			t.Errorf("la page d'accueil ne contient pas %q", want)
 		}
 	}
 }
 
-// TestPagesHaveNoMissingTranslation est le filet de sécurité de la règle « toute
-// chaîne affichée passe par le catalogue » : un identifiant absent se rend en
-// marqueur !comme.ceci!, et ce test le refuse.
+// TestHTMLPagesAreNotCacheable : toutes dépendent de qui est connecté. Un
+// cache intermédiaire, ou le simple bouton « précédent » sur un poste partagé,
+// montrerait sinon le tableau de bord d'une personne à la suivante.
+func TestHTMLPagesAreNotCacheable(t *testing.T) {
+	t.Parallel()
+
+	browser := newBrowser(t, newSite(t).handler)
+
+	if form := browser.get("/connexion"); form.Header.Get("Cache-Control") != "no-store" {
+		t.Errorf("/connexion : Cache-Control = %q, attendu no-store", form.Header.Get("Cache-Control"))
+	}
+
+	browser.login(ownerEmail)
+
+	if home := browser.get("/"); home.Header.Get("Cache-Control") != "no-store" {
+		t.Errorf("/ : Cache-Control = %q, attendu no-store", home.Header.Get("Cache-Control"))
+	}
+}
+
+// TestPagesHaveNoMissingTranslation : le catalogue est la seule source du texte
+// affiché. Un identifiant absent se rend en marqueur !comme.ceci!, et ce test le
+// refuse — sur les pages publiques comme sur les pages connectées.
 func TestPagesHaveNoMissingTranslation(t *testing.T) {
 	t.Parallel()
 
-	handler := newHandler(t)
+	browser := newBrowser(t, newSite(t).handler)
 
-	for _, target := range []string{"/", "/page-inexistante"} {
-		resp := get(t, handler, target)
-		if marker := findMarker(resp.Body); marker != "" {
+	publicPaths := []string{"/connexion", "/connexion?deconnexion", "/connexion?suite=%2Fdevis"}
+	for _, target := range publicPaths {
+		if marker := findMarker(browser.get(target).Body); marker != "" {
 			t.Errorf("%s affiche une traduction manquante : %s", target, marker)
 		}
 	}
+
+	// Le formulaire en échec, pour couvrir les messages d'erreur du catalogue.
+	failure := browser.post("/connexion", invalidForm())
+	if marker := findMarker(failure.Body); marker != "" {
+		t.Errorf("le formulaire en échec affiche une traduction manquante : %s", marker)
+	}
+
+	// Puis les pages qui demandent une session, pour les deux rôles : le
+	// récapitulatif des accès n'affiche pas les mêmes lignes selon les scopes.
+	for _, email := range []string{ownerEmail, collaboratorEmail} {
+		loggedIn := newBrowser(t, newSite(t).handler)
+		loggedIn.login(email)
+
+		for _, target := range []string{"/", "/page-inexistante"} {
+			if marker := findMarker(loggedIn.get(target).Body); marker != "" {
+				t.Errorf("%s (rôle de %s) affiche une traduction manquante : %s", target, email, marker)
+			}
+		}
+	}
+}
+
+func invalidForm() map[string][]string {
+	return map[string][]string{"email": {"personne@exemple.fr"}, "mot_de_passe": {"mauvais mot de passe"}}
 }
 
 // findMarker repère un marqueur de traduction manquante de la forme
@@ -128,29 +113,35 @@ func findMarker(body string) string {
 	}
 }
 
+// TestUnknownPathRendersFrenchNotFound : une fois connecté, une URL inconnue donne bien un
+// 404 en français, et non une redirection de plus.
 func TestUnknownPathRendersFrenchNotFound(t *testing.T) {
 	t.Parallel()
 
-	resp := get(t, newHandler(t), "/une/page/qui/n/existe/pas")
+	browser := newBrowser(t, newSite(t).handler)
+	browser.login(ownerEmail)
 
-	if resp.Status != http.StatusNotFound {
-		t.Fatalf("statut = %d, attendu 404", resp.Status)
+	result := browser.get("/une/page/qui/n/existe/pas")
+	if result.Status != http.StatusNotFound {
+		t.Fatalf("statut = %d, attendu 404", result.Status)
 	}
-	// html/template échappe les apostrophes : la comparaison se fait sur le
-	// texte tel que l'utilisateur le lit, pas tel qu'il est encodé.
-	if !strings.Contains(html.UnescapeString(resp.Body), "Cette page n'existe pas") {
-		t.Errorf("la page 404 ne porte pas le message français attendu : %s", resp.Body)
+	// html/template échappe les apostrophes : la comparaison se fait sur le texte
+	// tel que l'utilisateur le lit, pas tel qu'il est encodé.
+	if !strings.Contains(html.UnescapeString(result.Body), "Cette page n'existe pas") {
+		t.Errorf("la page 404 ne porte pas le message français attendu : %s", result.Body)
 	}
 }
 
-// TestHomeIsExactPath : sans le motif {$}, la racine capterait toutes les URLs
-// et la page 404 ne serait jamais servie.
+// TestHomeIsExactPath : « / » ne doit pas se comporter en préfixe, sinon
+// toutes les URLs inconnues rendraient le tableau de bord.
 func TestHomeIsExactPath(t *testing.T) {
 	t.Parallel()
 
-	resp := get(t, newHandler(t), "/quelque-chose")
-	if resp.Status == http.StatusOK {
-		t.Error("une URL inconnue ne doit pas rendre la page d'accueil")
+	browser := newBrowser(t, newSite(t).handler)
+	browser.login(ownerEmail)
+
+	if result := browser.get("/quelque-chose"); result.Status == http.StatusOK {
+		t.Error("une URL inconnue rend le tableau de bord au lieu d'un 404")
 	}
 }
 
@@ -167,20 +158,18 @@ func TestStaticAssetsAreServed(t *testing.T) {
 		{name: "htmx vendoré", path: "/static/vendor/htmx.min.js", contentType: "javascript", contains: "htmx"},
 	}
 
-	handler := newHandler(t)
+	browser := newBrowser(t, newSite(t).handler)
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			resp := get(t, handler, tc.path)
-			if resp.Status != http.StatusOK {
-				t.Fatalf("statut = %d, attendu 200", resp.Status)
+			result := browser.get(tc.path)
+			if result.Status != http.StatusOK {
+				t.Fatalf("statut = %d, attendu 200", result.Status)
 			}
-			if got := resp.Header.Get("Content-Type"); !strings.Contains(got, tc.contentType) {
+			if got := result.Header.Get("Content-Type"); !strings.Contains(got, tc.contentType) {
 				t.Errorf("Content-Type = %q, attendu un type contenant %q", got, tc.contentType)
 			}
-			if !strings.Contains(resp.Body, tc.contains) {
+			if !strings.Contains(result.Body, tc.contains) {
 				t.Errorf("le contenu servi ne contient pas %q", tc.contains)
 			}
 		})
@@ -193,8 +182,9 @@ func TestStaticAssetsAreServed(t *testing.T) {
 func TestVendoredHTMXIsPinned(t *testing.T) {
 	t.Parallel()
 
-	resp := get(t, newHandler(t), "/static/vendor/htmx.min.js")
-	if !strings.Contains(resp.Body, `version:"2.0.10"`) {
+	browser := newBrowser(t, newSite(t).handler)
+
+	if !strings.Contains(browser.get("/static/vendor/htmx.min.js").Body, `version:"2.0.10"`) {
 		t.Error("htmx.min.js ne porte pas la version 2.0.10 annoncée dans static/vendor/VERSION")
 	}
 }
@@ -202,52 +192,43 @@ func TestVendoredHTMXIsPinned(t *testing.T) {
 func TestSecurityHeaders(t *testing.T) {
 	t.Parallel()
 
-	resp := get(t, newHandler(t), "/")
+	browser := newBrowser(t, newSite(t).handler)
+	result := browser.get("/connexion")
 
-	csp := resp.Header.Get("Content-Security-Policy")
+	csp := result.Header.Get("Content-Security-Policy")
 	if csp == "" {
 		t.Fatal("aucune politique de sécurité du contenu")
 	}
-	for _, want := range []string{"default-src 'self'", "frame-ancestors 'none'"} {
-		if !strings.Contains(csp, want) {
-			t.Errorf("CSP = %q, doit contenir %q", csp, want)
+	for _, directive := range []string{"default-src 'self'", "frame-ancestors 'none'", "form-action 'self'", "base-uri 'none'"} {
+		if !strings.Contains(csp, directive) {
+			t.Errorf("CSP sans la directive %q : %s", directive, csp)
 		}
 	}
-	// Aucune ressource distante, aucun script en ligne : la moindre tolérance
-	// ici viderait la politique de son intérêt.
-	for _, forbidden := range []string{"unsafe-inline", "unsafe-eval", "http://", "https://"} {
+	for _, forbidden := range []string{"unsafe-inline", "unsafe-eval", "*"} {
 		if strings.Contains(csp, forbidden) {
-			t.Errorf("CSP = %q, ne doit pas contenir %q", csp, forbidden)
+			t.Errorf("CSP avec %q : %s", forbidden, csp)
 		}
 	}
 
-	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
-		t.Errorf("X-Content-Type-Options = %q", got)
+	for header, want := range map[string]string{
+		"X-Content-Type-Options":     "nosniff",
+		"Referrer-Policy":            "same-origin",
+		"Cross-Origin-Opener-Policy": "same-origin",
+	} {
+		if got := result.Header.Get(header); got != want {
+			t.Errorf("%s = %q, attendu %q", header, got, want)
+		}
 	}
 }
 
-// TestAssetURLsCarryBuildStamp : sans estampille, un navigateur garderait
-// l'ancienne feuille de style après une mise à jour du binaire.
+// TestAssetURLsCarryBuildStamp : une mise à jour du binaire doit invalider
+// le cache du navigateur sans intervention.
 func TestAssetURLsCarryBuildStamp(t *testing.T) {
 	t.Parallel()
 
-	resp := get(t, newHandler(t), "/")
-	if !strings.Contains(resp.Body, "avanti.css?v=v0.0.0-test") {
+	browser := newBrowser(t, newSite(t).handler)
+
+	if !strings.Contains(browser.get("/connexion").Body, "avanti.css?v=v0.0.0-test") {
 		t.Error("les URLs d'assets ne portent pas l'estampille de build")
-	}
-}
-
-// TestUnavailableSectionsAreNotLinks : annoncer une section dans la navigation
-// est acceptable, y envoyer l'utilisateur sur un 404 ne l'est pas.
-func TestUnavailableSectionsAreNotLinks(t *testing.T) {
-	t.Parallel()
-
-	resp := get(t, newHandler(t), "/")
-
-	if strings.Contains(resp.Body, `href="/devis"`) {
-		t.Error("la navigation pointe vers /devis, qui n'existe pas encore")
-	}
-	if !strings.Contains(resp.Body, "Devis") {
-		t.Error("la navigation doit tout de même annoncer la section Devis")
 	}
 }

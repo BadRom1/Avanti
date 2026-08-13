@@ -54,6 +54,21 @@ linters:
         - diagnostic
         - performance
         - style
+      disabled-checks:
+        # hugeParam et rangeValCopy réclament un pointeur dès qu'une structure
+        # dépasse 80 octets. Toutes les entités de domaine d'Avanti les dépassent
+        # — un User en fait 136, un Devis en fera davantage — et les deux checks
+        # demandent donc de les manipuler par pointeur partout.
+        #
+        # C'est refusé pour la même raison que fieldalignment plus bas : la valeur
+        # est ce qui rend une entité de domaine sûre à passer. Un `User` copié ne
+        # peut pas être modifié dans le dos de son appelant, un port qui reçoit
+        # `user User` ne peut pas garder une référence vers l'état d'un autre, et
+        # une méthode à récepteur valeur ne peut pas muter l'agrégat. Échanger
+        # cela contre l'économie de quelques dizaines d'octets, dans une
+        # application qui sert deux personnes, serait un mauvais marché.
+        - hugeParam
+        - rangeValCopy
 
     govet:
       enable-all: true
@@ -86,26 +101,43 @@ linters:
         - catalogue
         - catalogues
         - commandes
+        - compteurs
+        - concret
+        - conflit
         - confortable
         - connexion
         - connexions
+        - continuent
         - correspondant
+        - davantage
         - demande
         - demandes
+        - distincte
         - enveloppe
+        - enveloppes
         - exemple
+        - existant
+        - manipule
+        - normalisation
         - persistance
         - pointeur
         - programme
+        - recommandation
+        - respecte
+        - restauration
+        - substitue
         - trafic
         - transforme
         - utilise
+
         # Fragments, pas des mots : misspell coupe sur les caractères accentués,
         # « intermédiaire » lui parvient donc en « interm » + « diaire » et
         # « démarrage » en « d » + « marrage ». Ne pas les « corriger » en mots
         # entiers — la forme tronquée est celle que misspell compare.
+        - activit
         - interm
         - marrage
+        - normalis
 
     nolintlint:
       require-explanation: true
@@ -221,6 +253,21 @@ linters:
           allow:
             - $gostd
             - github.com/Romain-Badino/Avanti/internal/identity
+            # Bibliothèque métier sans effet de bord, admise dans le domaine (R1).
+            #
+            # argon2id est *la* décision de docs/ARCHITECTURE.md §5 sur les mots
+            # de passe, et une décision de sécurité n'a pas à être rejouable de
+            # l'extérieur : la mettre derrière un port réglable par la
+            # configuration reviendrait à offrir un moyen de l'affaiblir. La
+            # bibliothèque ne fait ni entrée-sortie, ni réseau, ni horloge — elle
+            # calcule, et tire un sel dans crypto/rand. Elle laisse donc le
+            # domaine testable en Go pur, sans rien monter à côté.
+            #
+            # Le domaine expose tout de même le port identity.Hacheur, pour une
+            # autre raison : un argon2id correct est lent par construction, et les
+            # tests unitaires y substituent une implémentation triviale pour
+            # rester utilisables sous `make mutation`.
+            - github.com/alexedwards/argon2id
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
               desc: "un domaine n'importe rien d'autre du dépôt (R1) — identity expose des comptes et des scopes, la mécanique OAuth 2.1 vit dans adapters/mcp, la config et le logger arrivent en paramètres de construction"
@@ -234,6 +281,7 @@ linters:
           list-mode: strict
           files:
             - "${base-path}/internal/platform/**"
+            - "!${base-path}/internal/platform/*_test.go"
             - "!${base-path}/internal/platform/**/*_test.go"
           allow:
             - $gostd
@@ -255,6 +303,7 @@ linters:
         socle-platform-test:
           list-mode: strict
           files:
+            - "${base-path}/internal/platform/*_test.go"
             - "${base-path}/internal/platform/**/*_test.go"
           allow:
             - $gostd
@@ -278,6 +327,8 @@ linters:
           list-mode: strict
           files:
             - "${base-path}/internal/adapters/postgres/**"
+            - "!${base-path}/internal/adapters/postgres/*_test.go"
+            - "!${base-path}/internal/adapters/postgres/**/*_test.go"
           allow:
             - $gostd
             - github.com/Romain-Badino/Avanti/internal/adapters/postgres
@@ -287,9 +338,38 @@ linters:
             - github.com/Romain-Badino/Avanti/internal/identity
             - github.com/Romain-Badino/Avanti/internal/planning
             - github.com/Romain-Badino/Avanti/internal/platform
+            # pgx : le pilote PostgreSQL retenu (docs/ARCHITECTURE.md §5). C'est
+            # ici, dans les dépôts, qu'il sert à écrire le SQL réel ; le socle,
+            # lui, n'en tient que le pool.
+            - github.com/jackc/pgx/v5
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
               desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"
+
+        # Les tests de l'adapter postgres voient, en plus, testcontainers : du SQL
+        # ne se vérifie que contre un vrai PostgreSQL. Même dispositif que
+        # socle-platform-test, et pour la même raison : la règle est bornée aux
+        # *_test.go, de sorte qu'un import de testcontainers dans du code de
+        # production soit rejeté par le lint plutôt que par la vigilance en revue.
+        adapter-postgres-test:
+          list-mode: strict
+          files:
+            - "${base-path}/internal/adapters/postgres/*_test.go"
+            - "${base-path}/internal/adapters/postgres/**/*_test.go"
+          allow:
+            - $gostd
+            - github.com/Romain-Badino/Avanti/internal/adapters/postgres
+            - github.com/Romain-Badino/Avanti/internal/devis
+            - github.com/Romain-Badino/Avanti/internal/document
+            - github.com/Romain-Badino/Avanti/internal/finance
+            - github.com/Romain-Badino/Avanti/internal/identity
+            - github.com/Romain-Badino/Avanti/internal/planning
+            - github.com/Romain-Badino/Avanti/internal/platform
+            - github.com/jackc/pgx/v5
+            - github.com/testcontainers/testcontainers-go
+          deny:
+            - pkg: "github.com/Romain-Badino/Avanti/"
+              desc: "les tests d'un adapter suivent R4 comme le code qu'ils testent"
 
         adapter-web:
           list-mode: strict
@@ -309,6 +389,13 @@ linters:
             - github.com/nicksnyder/go-i18n/v2
             # golang.org/x/text : les étiquettes de langue que go-i18n manipule.
             - golang.org/x/text/language
+            # scs : sessions serveur (docs/ARCHITECTURE.md §5). Seule l'interface
+            # scs.Store et le gestionnaire de sessions entrent ici — la politique
+            # du cookie est une décision de l'interface web, donc sa place est
+            # bien celle-ci. Le magasin PostgreSQL concret (pgxstore) est choisi
+            # par cmd/avanti et arrive en paramètre, ce qui laisse cet adapter
+            # ignorant de pgx.
+            - github.com/alexedwards/scs/v2
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
               desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"

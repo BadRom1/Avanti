@@ -130,7 +130,7 @@ secrets: $(GITLEAKS) ## Cherche des secrets dans l'arbre de travail et l'histori
 
 # Tests de mutation : best-effort, hors de `ci` (trop lent pour chaque push).
 # Restreint aux domaines, là où vit la logique métier dont la valeur des tests
-# mérite d'être mesurée ; les adapters sont exclus, leurs tests sont des tests
+# mérite d'être mesurée ; les adapters en sont absents, leurs tests sont des tests
 # d'intégration que la mutation évalue mal.
 #
 # --timeout-coefficient 10 : gremlins déduit le délai d'un mutant de la durée de
@@ -139,15 +139,23 @@ secrets: $(GITLEAKS) ## Cherche des secrets dans l'arbre de travail et l'histori
 # corrige ce biais — vérifié : sans lui 3 mutants sur 3 expirent, avec lui ils
 # sont correctement classés KILLED/LIVED.
 #
+# Un paquet par appel, et non un motif récursif : `gremlins unleash ./internal/...`
+# rend « No results to report » sans rien analyser — v0.6.0 n'étend pas le `...`
+# de Go. La panne était silencieuse, ce qui est le pire cas pour une cible dont on
+# lit la sortie plutôt que le code de retour. Énumérer les domaines coûte une
+# ligne à chaque nouveau domaine, et se voit.
+#
 # Best-effort assumé : gremlins avance lentement (v0.6.0 en décembre 2025) et sa
 # sortie est indicative, pas un quality gate. Voir docs/ARCHITECTURE.md.
+DOMAINES := devis document finance identity planning
+
 .PHONY: mutation
 mutation: $(GREMLINS) ## Tests de mutation sur les domaines (best-effort, lent)
-	@$(GREMLINS) unleash \
-		--timeout-coefficient 10 \
-		--exclude-files 'internal/adapters/.*' \
-		$(ROOT)/internal/... \
-		|| echo "make mutation : gremlins a terminé en erreur — cible best-effort, sans incidence sur la CI" >&2
+	@for domaine in $(DOMAINES); do \
+		echo "--- internal/$$domaine"; \
+		$(GREMLINS) unleash --timeout-coefficient 10 ./internal/$$domaine \
+			|| echo "make mutation : gremlins a terminé en erreur sur $$domaine — cible best-effort, sans incidence sur la CI" >&2; \
+	done
 
 .PHONY: ci
 ci: lint test sec secrets ## Enchaîne tout ce que la CI vérifie

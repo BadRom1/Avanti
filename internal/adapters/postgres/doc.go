@@ -1,6 +1,10 @@
 // Package postgres implémente les ports de persistance des domaines au-dessus de
-// PostgreSQL, via pgx v5 en mode natif (pas database/sql). Il porte aussi les
-// migrations goose embarquées dans le binaire.
+// PostgreSQL, via pgx v5 en mode natif (pas database/sql).
+//
+// Le schéma, lui, n'est pas ici : les migrations goose vivent dans
+// internal/platform/migrate, qui les embarque et les rejoue au démarrage. La
+// séparation est celle de R3 — appliquer un schéma est du socle, écrire les
+// requêtes d'un domaine est de l'adapter.
 //
 // Frontières : c'est un adapter, il a donc le droit d'importer les domaines
 // (pour implémenter leurs interfaces) et internal/platform (pour le pool de

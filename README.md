@@ -6,10 +6,12 @@ Avanti — pilotage de la reconstruction d'une maison : devis, planning, finance
 
 **En construction.** Le socle applicatif tourne : l'application démarre, lit sa
 configuration, applique ses migrations, sert une interface web et répond à ses
-sondes d'exploitation. Les domaines métier — devis, planning, finances,
-documents, identité — ne sont pas encore implémentés : la page d'accueil est un
-provisoire assumé. Rien n'est donc utilisable pour piloter un vrai chantier, mais
-la charpente est en place et vérifiée par la CI.
+sondes d'exploitation. **Les comptes et les accès fonctionnent** : on crée un
+compte en ligne de commande, on se connecte, la session tient, et le menu s'ajuste
+aux droits du rôle. Les quatre domaines métier — devis, planning, finances,
+documents — ne sont pas encore implémentés : le tableau de bord est un provisoire
+assumé. Rien n'est donc utilisable pour piloter un vrai chantier, mais la
+charpente est en place et vérifiée par la CI.
 
 ## Stack
 
@@ -42,11 +44,13 @@ make tools          # installe l'outillage épinglé dans ./bin
 make hooks          # active les hooks git du dépôt
 cp .env.example .env
 make dev-db-up      # démarre le PostgreSQL de développement
+make build          # compile ./bin/avanti
+./bin/avanti user add --email vous@exemple.fr --nom "Votre Nom" --role proprietaire
 make run            # lance l'application
 ```
 
-L'interface répond alors sur <http://localhost:8080>. Deux sondes complètent la
-page d'accueil :
+L'interface répond alors sur <http://localhost:8080> et demande la connexion.
+Deux sondes y échappent :
 
 ```sh
 curl -i http://localhost:8080/healthz   # le processus répond (sans toucher à la base)
@@ -100,17 +104,65 @@ est un binaire face à un PostgreSQL administré à part.
 | `make hooks` | Active les hooks git du dépôt |
 | `make clean` | Supprime `./bin` et les artefacts de couverture |
 
+## Comptes et connexion
+
+Avanti n'a **pas de page d'inscription**, et n'en aura pas : c'est une instance
+privée, sans personne à inscrire. Les comptes se créent en ligne de commande, sur
+la machine qui héberge l'instance.
+
+```sh
+# Mot de passe demandé au terminal, sans écho, puis redemandé pour confirmation.
+avanti user add --email vous@exemple.fr --nom "Votre Nom" --role proprietaire
+
+# Ou engendré par Avanti et affiché une seule fois — pratique pour un script
+# d'installation, ou pour un compte dont le mot de passe va dans un gestionnaire.
+avanti user add --email architecte@exemple.fr --nom "Amélie Dupré" \
+                --role collaborateur --generate
+
+avanti user list                                    # qui existe, avec quel rôle
+avanti user disable --email architecte@exemple.fr   # ferme l'accès
+avanti user enable  --email architecte@exemple.fr   # le rouvre
+```
+
+Les sous-commandes `user` lisent la même configuration que `avanti serve` et
+appliquent les migrations manquantes si `AVANTI_MIGRATE_ON_START` le permet : le
+premier compte se crée donc sur une base neuve, avant que le serveur n'ait jamais
+tourné.
+
+### Les deux rôles
+
+| Rôle | Ce qu'il ouvre | Accès agent IA (MCP) |
+|---|---|---|
+| `proprietaire` | tout : devis, planning, finances, documents | oui |
+| `collaborateur` | devis et planning, en lecture et écriture | non |
+
+`collaborateur` est le profil de l'intervenant extérieur — l'architecte : il
+travaille sur les devis et le planning par l'interface web, et ne voit ni les
+finances ni les pièces du dossier. Ces sections ne lui sont pas grisées, elles ne
+lui sont pas affichées.
+
+Le seul critère imposé au mot de passe est sa **longueur : douze caractères au
+minimum**, sans aucune règle de composition. Les mots de passe sont hachés en
+argon2id ; Avanti ne peut donc pas retrouver un mot de passe perdu, il faut en
+créer un nouveau.
+
+Un compte n'est jamais supprimé. `user disable` ferme l'accès et **coupe les
+sessions web déjà ouvertes** sur ce compte, sans attendre leur expiration ; les
+actions que le compte a signées continuent de le désigner.
+
 ## Commandes du binaire
 
 ```
 avanti serve      démarre le serveur HTTP (commande par défaut)
+avanti user       gère les comptes (« avanti user » pour le détail)
 avanti version    affiche l'identité du binaire (équivalent : avanti --version)
 ```
 
 ## Tests
 
-`make test` couvre tout. Les tests d'intégration du socle (migrations, `/readyz`)
-ont besoin d'un vrai PostgreSQL et l'obtiennent de trois façons, dans cet ordre :
+`make test` couvre tout. Les tests d'intégration — migrations et `/readyz` pour le
+socle, dépôt des comptes et contraintes de table pour l'adapter PostgreSQL — ont
+besoin d'un vrai PostgreSQL et l'obtiennent de trois façons, dans cet ordre :
 
 1. `AVANTI_TEST_DATABASE_URL`, si la variable est renseignée — c'est le chemin de
    la CI, où un service PostgreSQL tourne déjà ;
@@ -131,7 +183,7 @@ internal/
   planning/          Domaine : étapes, jalons, dépendances, retards
   finance/           Domaine : factures, acomptes, suivi assurance
   document/          Domaine : pièces du dossier et leur classement
-  identity/          Domaine transverse : comptes, rôles, scopes
+  identity/          Domaine transverse : comptes, rôles, scopes, Actor
   adapters/
     postgres/        Persistance
     web/             Interface humaine : routes, gabarits, CSS, HTMX vendoré,

@@ -9,9 +9,13 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 
+	"github.com/alexedwards/scs/v2"
+
+	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/server"
 )
@@ -35,25 +39,50 @@ type Options struct {
 	Logger *slog.Logger
 	// Build estampille le pied de page.
 	Build platform.BuildInfo
+	// Accounts porte les cas d'usage de l'identité : authentification et lecture du
+	// compte connecté. Obligatoire.
+	Accounts *identity.AccountService
+	// Sessions est le magasin de sessions. Obligatoire.
+	//
+	// C'est l'interface de scs, pas une implémentation : cmd/avanti choisit le
+	// magasin PostgreSQL, et cet adapter n'a donc jamais à connaître pgx. La
+	// politique du cookie, elle, est décidée ici — voir
+	// [newSessionManager].
+	Sessions scs.Store
+	// BaseURL est l'URL publique de l'instance. Obligatoire. Elle sert à deux
+	// choses : décider du drapeau Secure du cookie, et déclarer l'origine de
+	// confiance de la protection contre les requêtes intersites.
+	BaseURL *url.URL
 }
 
 // Handler sert l'interface humaine d'Avanti.
 type Handler struct {
-	mux     *http.ServeMux
-	logger  *slog.Logger
-	catalog *Catalog
-	pages   map[string]*template.Template
-	version string
+	root     http.Handler
+	mux      *http.ServeMux
+	logger   *slog.Logger
+	catalog  *Catalog
+	pages    map[string]*template.Template
+	version  string
+	accounts *identity.AccountService
+	sessions *scs.SessionManager
+	limiter  *loginLimiter
 }
 
 // New construit l'adapter : catalogue de traductions, gabarits compilés une
-// fois pour toutes, routes et service des assets.
+// fois pour toutes, sessions, routes et service des assets.
 //
 // Toute erreur de gabarit ou de catalogue est détectée ici, au démarrage, plutôt
 // qu'à la première requête d'un utilisateur.
 func New(opts Options) (*Handler, error) {
-	if opts.Logger == nil {
+	switch {
+	case opts.Logger == nil:
 		return nil, errors.New("web : journal manquant")
+	case opts.Accounts == nil:
+		return nil, errors.New("web : service de comptes manquant")
+	case opts.Sessions == nil:
+		return nil, errors.New("web : magasin de sessions manquant")
+	case opts.BaseURL == nil:
+		return nil, errors.New("web : URL publique manquante")
 	}
 
 	catalog, err := NewCatalog()
@@ -67,37 +96,103 @@ func New(opts Options) (*Handler, error) {
 	}
 
 	h := &Handler{
-		mux:     http.NewServeMux(),
-		logger:  opts.Logger,
-		catalog: catalog,
-		pages:   pages,
-		version: opts.Build.Version,
+		mux:      http.NewServeMux(),
+		logger:   opts.Logger,
+		catalog:  catalog,
+		pages:    pages,
+		version:  opts.Build.Version,
+		accounts: opts.Accounts,
+		sessions: newSessionManager(opts.Sessions, opts.BaseURL),
+		limiter:  newLimiter(nil),
 	}
 
 	h.mux.HandleFunc("GET /{$}", h.handleHome)
+	h.mux.HandleFunc("GET "+loginPath, h.handleLoginForm)
+	h.mux.HandleFunc("POST "+loginPath, h.handleLogin)
+	h.mux.HandleFunc("POST "+logoutPath, h.handleLogout)
 	h.mux.Handle("GET "+staticPrefix, http.StripPrefix(staticPrefix, staticFileServer()))
 	h.mux.HandleFunc("/", h.handleNotFound)
+
+	root, err := h.mountMiddleware(opts.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	h.root = root
 
 	return h, nil
 }
 
-// ServeHTTP applique les en-têtes de sécurité communs puis route la requête.
+// mountMiddleware empile les intergiciels autour du routeur.
+//
+// L'ordre va de l'extérieur vers l'intérieur, et il n'est pas indifférent :
+//
+//  1. la protection intersites d'abord, pour qu'une requête refusée le soit avant
+//     qu'on ait touché à la session ;
+//  2. le chargement de session ensuite, parce que tout ce qui suit en a besoin ;
+//  3. l'authentification enfin, qui lit cette session et pose l'acteur dans le
+//     contexte de la requête.
+func (h *Handler) mountMiddleware(baseURL *url.URL) (http.Handler, error) {
+	protection, err := crossOriginProtection(baseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	var root http.Handler = h.mux
+	root = h.requireAuth(root)
+	root = h.sessions.LoadAndSave(root)
+	root = protection.Handler(root)
+
+	return root, nil
+}
+
+// crossOriginProtection construit la défense CSRF de la bibliothèque standard.
+//
+// Go 1.25 a ajouté [http.CrossOriginProtection], et c'est ce qui est utilisé ici
+// plutôt qu'un jeton synchronisé maison. Son principe : refuser toute requête non
+// sûre — POST, PUT, DELETE — dont l'en-tête Sec-Fetch-Site annonce une origine
+// tierce, ou dont l'Origin ne correspond pas à l'hôte. Sec-Fetch-Site est présent
+// dans tous les navigateurs depuis 2023.
+//
+// Ce que cela remplace : un jeton CSRF dans chaque formulaire, avec sa réserve
+// côté session, sa rotation et ses cas particuliers. Ce que cela ne remplace pas :
+// SameSite=Lax sur le cookie, qui reste posé — les deux mécanismes couvrent la
+// même attaque par des chemins différents, et un client qui échapperait à l'un
+// devrait encore passer l'autre.
+//
+// L'URL publique est déclarée origine de confiance : derrière un reverse proxy,
+// l'en-tête Host vu par le processus n'est pas toujours celui que le navigateur a
+// mis dans Origin, et sans cette déclaration la comparaison échouerait sur des
+// requêtes parfaitement légitimes.
+func crossOriginProtection(baseURL *url.URL) (*http.CrossOriginProtection, error) {
+	protection := http.NewCrossOriginProtection()
+
+	origin := baseURL.Scheme + "://" + baseURL.Host
+	if err := protection.AddTrustedOrigin(origin); err != nil {
+		return nil, fmt.Errorf("web : origine de confiance %q refusée : %w", origin, err)
+	}
+
+	return protection, nil
+}
+
+// ServeHTTP applique les en-têtes de sécurité communs puis route la requête au
+// travers de la chaîne d'intergiciels.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	setSecurityHeaders(w.Header())
-	h.mux.ServeHTTP(w, r)
+	h.root.ServeHTTP(w, r)
 }
 
 func (h *Handler) handleHome(w http.ResponseWriter, r *http.Request) {
-	h.render(w, r, pageHome, http.StatusOK)
+	h.render(w, r, pageHome, http.StatusOK, nil)
 }
 
 func (h *Handler) handleNotFound(w http.ResponseWriter, r *http.Request) {
-	h.render(w, r, pageNotFound, http.StatusNotFound)
+	h.render(w, r, pageNotFound, http.StatusNotFound, nil)
 }
 
 // Les gabarits de page, désignés par leur nom de fichier.
 const (
 	pageHome          = "home.gohtml"
+	pageLogin         = "login.gohtml"
 	pageNotFound      = "not_found.gohtml"
 	pageInternalError = "internal_error.gohtml"
 )
@@ -105,11 +200,13 @@ const (
 // render écrit la page demandée, et bascule sur la page d'erreur si le rendu
 // échoue. Le dernier recours est un texte brut : si même la page d'erreur ne se
 // rend pas, insister ne ferait que boucler.
-func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, status int) {
-	if err := h.write(w, r, page, status); err != nil {
+//
+// donnees est la charge utile propre à la page ; nil pour celles qui n'en ont pas.
+func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, status int, data any) {
+	if err := h.write(w, r, page, status, data); err != nil {
 		h.fail(r, err)
 
-		if err := h.write(w, r, pageInternalError, http.StatusInternalServerError); err != nil {
+		if err := h.write(w, r, pageInternalError, http.StatusInternalServerError, nil); err != nil {
 			h.fail(r, err)
 			http.Error(w, "Erreur interne du serveur.", http.StatusInternalServerError)
 		}
@@ -120,7 +217,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, st
 // Sans ce détour, une erreur de gabarit survenant au milieu du document
 // produirait une page tronquée servie avec un code 200 — et rien ne permettrait
 // plus, l'en-tête étant parti, de la remplacer par une page d'erreur.
-func (h *Handler) write(w http.ResponseWriter, r *http.Request, page string, status int) error {
+func (h *Handler) write(w http.ResponseWriter, r *http.Request, page string, status int, data any) error {
 	tmpl, ok := h.pages[page]
 	if !ok {
 		return fmt.Errorf("gabarit inconnu : %s", page)
@@ -129,11 +226,16 @@ func (h *Handler) write(w http.ResponseWriter, r *http.Request, page string, sta
 	translator := h.catalog.Translator(r.Header.Get("Accept-Language"))
 
 	var rendered bytes.Buffer
-	if err := tmpl.Execute(&rendered, h.newView(translator, r)); err != nil {
+	if err := tmpl.Execute(&rendered, h.newView(translator, r, data)); err != nil {
 		return fmt.Errorf("rendu du gabarit %s : %w", page, err)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Aucune page HTML d'Avanti n'est cachable : toutes dépendent de qui est
+	// connecté. Un cache intermédiaire — ou le simple bouton « précédent » —
+	// pourrait sinon montrer à la personne suivante le tableau de bord de la
+	// précédente.
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 
 	if _, err := rendered.WriteTo(w); err != nil {

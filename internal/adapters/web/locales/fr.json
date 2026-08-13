@@ -4,6 +4,7 @@
 
   "layout.skip_to_content": "Aller au contenu principal",
   "layout.main_navigation": "Navigation principale",
+  "layout.deconnexion": "Se déconnecter",
 
   "nav.dashboard": "Tableau de bord",
   "nav.devis": "Devis",
@@ -12,15 +13,35 @@
   "nav.documents": "Documents",
   "nav.pending_hint": "Section à venir",
 
+  "role.proprietaire": "Propriétaire",
+  "role.collaborateur": "Collaborateur",
+
+  "acces.lecture": "Consultation",
+  "acces.lecture_ecriture": "Consultation et modification",
+  "acces.mcp": "Accès agent IA",
+  "acces.mcp_detail": "Autorisé, via le serveur MCP",
+
   "home.title": "Tableau de bord",
-  "home.heading": "Avanti — tableau de bord à venir",
-  "home.intro": "L'application est en cours de construction. Le socle technique est en place : configuration, base de données, migrations et serveur HTTP répondent déjà.",
+  "home.heading": "Bonjour {{.Nom}}",
+  "home.intro": "L'application est en cours de construction. Le socle technique, les comptes et les accès sont en place ; les domaines métier arrivent ensuite.",
+  "home.acces_heading": "Vos accès",
+  "home.acces_intro": "Vous êtes connecté avec le rôle « {{.Role}} ». Voici ce qu'il ouvre.",
   "home.next_steps_heading": "Ce qui arrive ensuite",
-  "home.next_step_identity": "Comptes, rôles et accès",
   "home.next_step_devis": "Demandes de devis et comparaison des offres",
   "home.next_step_planning": "Étapes, jalons et détection des retards",
   "home.next_step_finance": "Factures, acomptes et suivi assurance",
   "home.next_step_documents": "Pièces du dossier et classement",
+
+  "connexion.title": "Connexion",
+  "connexion.heading": "Se connecter à Avanti",
+  "connexion.champ.email": "Adresse email",
+  "connexion.champ.mot_de_passe": "Mot de passe",
+  "connexion.soumettre": "Se connecter",
+  "connexion.deconnecte": "Vous avez été déconnecté.",
+  "connexion.aide_compte": "Les comptes sont créés en ligne de commande, avec « avanti user add ». Il n'y a pas d'inscription : Avanti est une instance privée.",
+  "connexion.erreur.identifiants": "Adresse email ou mot de passe incorrect.",
+  "connexion.erreur.compte_desactive": "Ce compte est désactivé. Demandez sa réactivation à un propriétaire de l'instance.",
+  "connexion.erreur.trop_de_tentatives": "Trop de tentatives de connexion. Réessayez dans {{.Minutes}} min.",
 
   "footer.version": "Version {{.Version}}",
   "footer.license": "Distribué sous licence AGPL-3.0.",
