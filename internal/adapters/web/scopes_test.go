@@ -74,11 +74,20 @@ func TestUnavailableSectionsAreNotLinks(t *testing.T) {
 
 	result := browser.get("/")
 
-	if strings.Contains(result.Body, `href="/devis"`) {
-		t.Error("la navigation pointe vers /devis, qui n'existe pas encore")
+	// Les devis sont branchés : leur entrée est un vrai lien.
+	if !strings.Contains(result.Body, `href="/devis"`) {
+		t.Error("la navigation ne pointe pas vers /devis, qui est pourtant servi")
 	}
-	if !strings.Contains(result.Body, "Devis") {
-		t.Error("la navigation doit tout de même annoncer la section Devis")
+
+	// Les sections encore à écrire sont annoncées sans lien : un menu qui mène à
+	// un 404 est pire qu'un menu qui grise ce qui n'existe pas.
+	for _, pending := range []string{"/planning", "/finances", "/documents"} {
+		if strings.Contains(result.Body, `href="`+pending+`"`) {
+			t.Errorf("la navigation pointe vers %s, qui n'existe pas encore", pending)
+		}
+	}
+	if !strings.Contains(result.Body, "Planning") {
+		t.Error("la navigation doit tout de même annoncer la section Planning")
 	}
 }
 

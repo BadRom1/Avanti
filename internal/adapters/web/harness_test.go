@@ -23,6 +23,7 @@ import (
 	"github.com/alexedwards/scs/v2/memstore"
 
 	"github.com/Romain-Badino/Avanti/internal/adapters/web"
+	"github.com/Romain-Badino/Avanti/internal/devis"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/logging"
@@ -113,6 +114,7 @@ type site struct {
 	accounts *identity.AccountService
 	repo     *memRepo
 	oauth    *memOAuthStore
+	devis    *memDevisRepo
 }
 
 // newSite monte l'adapter avec trois comptes : un propriétaire, un
@@ -163,6 +165,12 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 
 	oauthStore := newMemOAuthStore()
 
+	devisRepo := newMemDevisRepo()
+	devisService, err := devis.NewService(devis.ServiceOptions{Repo: devisRepo})
+	if err != nil {
+		t.Fatalf("devis.NewService() échoué : %v", err)
+	}
+
 	handler, err := web.New(web.Options{
 		Logger:       logging.Discard(),
 		Build:        platform.BuildInfo{Version: "v0.0.0-test"},
@@ -171,12 +179,13 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 		BaseURL:      baseURL,
 		OAuthStorage: oauthStore,
 		OAuthSecret:  []byte(oauthSecretTest),
+		Devis:        devisService,
 	})
 	if err != nil {
 		t.Fatalf("web.New() échoué : %v", err)
 	}
 
-	return &site{handler: handler, accounts: accounts, repo: repo, oauth: oauthStore}
+	return &site{handler: handler, accounts: accounts, repo: repo, oauth: oauthStore, devis: devisRepo}
 }
 
 // disable ferme le compte portant cet email.

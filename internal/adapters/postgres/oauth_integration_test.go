@@ -586,7 +586,7 @@ func TestOAuthStoreGrants(t *testing.T) {
 
 	store, userID := oauthStoreWithAccount(t)
 	testClient(t, store, "client-consentement")
-	other := string(userID[:len(userID)-1]) + "0"
+	other := otherAccountID(string(userID))
 
 	granted, err := store.HasGrant(t.Context(), string(userID), "client-consentement")
 	if err != nil {
@@ -622,6 +622,23 @@ func TestOAuthStoreGrants(t *testing.T) {
 	if granted {
 		t.Error("HasGrant() = true pour un compte qui n'a rien consenti")
 	}
+}
+
+// otherAccountID fabrique un identifiant différent de celui donné, en changeant
+// son dernier caractère.
+//
+// Le remplacement est conditionnel, et ce n'est pas une précaution gratuite :
+// écrire toujours « 0 » rendait le test faux une fois sur seize — quand l'UUID
+// tiré au hasard finissait déjà par un zéro, « l'autre compte » était le compte
+// lui-même, et le consentement qu'il venait d'accorder se retrouvait là où le
+// test attendait qu'il n'y en ait aucun.
+func otherAccountID(id string) string {
+	replacement := "0"
+	if id[len(id)-1] == '0' {
+		replacement = "1"
+	}
+
+	return id[:len(id)-1] + replacement
 }
 
 // TestOAuthStoreGrantRejectsUnknownAccount vérifie que la table refuse un

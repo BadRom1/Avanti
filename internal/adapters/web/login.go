@@ -111,12 +111,18 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		target = input.Next
 	}
 
-	// gosec suit la valeur depuis le formulaire et signale une redirection ouverte.
-	// Elle est déjà filtrée : input.Next sort de internalPath, qui n'accepte
-	// qu'un chemin local et le reconstruit au lieu de le recopier. L'analyse de
-	// gosec ne reconnaît pas ce nettoyage ; TestOpenRedirectRejected, lui,
-	// vérifie le résultat sur cinq formes d'attaque.
-	http.Redirect(w, r, target, http.StatusSeeOther) //nolint:gosec // cible filtrée par internalPath, voir TestOpenRedirectRejected.
+	// gosec suit la valeur depuis le formulaire et peut y voir une redirection
+	// ouverte. Elle est déjà filtrée : input.Next sort de internalPath, qui
+	// n'accepte qu'un chemin local et le reconstruit au lieu de le recopier ;
+	// TestOpenRedirectRejected vérifie le résultat sur cinq formes d'attaque.
+	//
+	// L'annotation est celle de gosec, comme pour fieldPassword plus haut, et non
+	// un //nolint de golangci-lint. Les deux ne couvrent pas le même terrain :
+	// `make sec` lance gosec seul, qui ne connaît pas les directives de
+	// golangci ; et un //nolint que gosec ne consomme pas devient à son tour une
+	// erreur de lint, celle des directives inutilisées.
+	// #nosec G107 -- cible filtrée par internalPath, voir TestOpenRedirectRejected.
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // openSession installe la session de l'acteur qui vient de s'authentifier.

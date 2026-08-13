@@ -237,6 +237,13 @@ func startAvanti(t *testing.T) *avantiInstance {
 		t.Fatalf("création du compte de test : %v", err)
 	}
 
+	// Le domaine des devis est monté comme en production : l'adapter web l'exige,
+	// et le bout-en-bout n'a d'intérêt que s'il assemble les mêmes pièces.
+	devisService, err := newDevisService(pool)
+	if err != nil {
+		t.Fatalf("newDevisService() échoué : %v", err)
+	}
+
 	sessionStore := pgxstore.NewWithCleanupInterval(pool, web.SessionCleanupInterval)
 	t.Cleanup(sessionStore.StopCleanup)
 
@@ -259,6 +266,7 @@ func startAvanti(t *testing.T) *avantiInstance {
 		BaseURL:      baseURL,
 		OAuthStorage: oauthStore,
 		OAuthSecret:  []byte(e2eOAuthSecret),
+		Devis:        devisService,
 	})
 	if err != nil {
 		t.Fatalf("web.New() échoué : %v", err)

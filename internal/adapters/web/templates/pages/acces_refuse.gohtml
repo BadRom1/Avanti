@@ -1,0 +1,19 @@
+{{- /*
+Refus d'autorisation. La personne est bien connectée : son compte ne porte
+simplement pas le scope que la route exige.
+
+La page ne nomme pas le scope manquant. Le rôle est la seule source des droits,
+et il n'appartient pas à la personne qui lit cette page de le changer — lui
+détailler l'autorisation absente ne ferait que renseigner qui essaierait des
+URLs.
+*/ -}}
+{{ define "title" }}{{ .T "acces_refuse.title" }}{{ end }}
+
+{{ define "content" }}
+<section class="card card--etroite" aria-labelledby="titre-acces-refuse">
+    <h1 id="titre-acces-refuse">{{ .T "acces_refuse.heading" }}</h1>
+    <p>{{ .T "acces_refuse.message" }}</p>
+    <p class="note">{{ .T "acces_refuse.detail" }}</p>
+    <p><a class="button" href="/">{{ .T "acces_refuse.retour" }}</a></p>
+</section>
+{{ end }}

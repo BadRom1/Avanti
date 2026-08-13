@@ -16,6 +16,7 @@ import (
 
 	"github.com/alexedwards/scs/v2"
 
+	"github.com/Romain-Badino/Avanti/internal/devis"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/server"
@@ -64,9 +65,15 @@ type Options struct {
 	// OAuthSecret est la clé HMAC qui signe codes et jetons. Obligatoire, et au
 	// moins [oauthSecretMinLength] octets.
 	OAuthSecret []byte
-	// Clock sert d'horloge au serveur d'autorisation. nil signifie time.Now ;
-	// les tests en injectent une pour ne pas avoir à attendre l'expiration d'un
-	// jeton.
+	// Devis porte les cas d'usage de la consultation des artisans. Obligatoire.
+	//
+	// Le service est construit par cmd/avanti sur le dépôt PostgreSQL : cet
+	// adapter ne voit que le domaine, jamais sa persistance (R4).
+	Devis *devis.Service
+	// Clock sert d'horloge au serveur d'autorisation et aux dates proposées par
+	// les formulaires. nil signifie time.Now ; les tests en injectent une pour ne
+	// pas avoir à attendre l'expiration d'un jeton, et pour que les valeurs
+	// pré-remplies soient prévisibles.
 	Clock func() time.Time
 }
 
@@ -82,6 +89,8 @@ type Handler struct {
 	sessions *scs.SessionManager
 	limiter  *loginLimiter
 	oauth    *oauthServer
+	devis    *devis.Service
+	clock    func() time.Time
 }
 
 // New construit l'adapter : catalogue de traductions, gabarits compilés une
@@ -101,6 +110,8 @@ func New(opts Options) (*Handler, error) {
 		return nil, errors.New("web : URL publique manquante")
 	case opts.OAuthStorage == nil:
 		return nil, errors.New("web : magasin OAuth manquant")
+	case opts.Devis == nil:
+		return nil, errors.New("web : service des devis manquant")
 	}
 
 	catalog, err := NewCatalog()
@@ -128,6 +139,8 @@ func New(opts Options) (*Handler, error) {
 		sessions: newSessionManager(opts.Sessions, opts.BaseURL),
 		limiter:  newLimiter(nil),
 		oauth:    oauth,
+		devis:    opts.Devis,
+		clock:    opts.Clock,
 	}
 
 	h.mux.HandleFunc("GET /{$}", h.handleHome)
@@ -135,6 +148,7 @@ func New(opts Options) (*Handler, error) {
 	h.mux.HandleFunc("POST "+loginPath, h.handleLogin)
 	h.mux.HandleFunc("POST "+logoutPath, h.handleLogout)
 	h.mux.Handle("GET "+staticPrefix, http.StripPrefix(staticPrefix, staticFileServer()))
+	h.mountDevis()
 	h.mountOAuth()
 	h.mux.HandleFunc("/", h.handleNotFound)
 
@@ -241,6 +255,11 @@ const (
 	pageInternalError = "internal_error.gohtml"
 	pageOAuthConsent  = "oauth_consent.gohtml"
 	pageOAuthRefused  = "oauth_refused.gohtml"
+	pageForbidden     = "acces_refuse.gohtml"
+
+	pageDevisIndex           = "devis_index.gohtml"
+	pageDevisComparaison     = "devis_comparaison.gohtml"
+	pageDevisNouvelleDemande = "devis_nouvelle_demande.gohtml"
 )
 
 // render écrit la page demandée, et bascule sur la page d'erreur si le rendu

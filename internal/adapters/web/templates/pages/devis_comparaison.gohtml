@@ -1,0 +1,202 @@
+{{- /*
+La comparaison : les devis d'un même lot de travaux, mis en regard.
+
+Les devis sont triés du moins-disant au plus-disant par le domaine, et la colonne
+« écart » se lit par rapport à cette première ligne. C'est la seule mise en forme
+qui compte ici : deux montants se comparent en descendant une colonne, pas en
+sautant d'une carte à l'autre.
+
+Les décisions sont des formulaires POST. HTMX les intercepte pour demander
+confirmation et éviter un rechargement complet ; sans JavaScript, le formulaire
+part normalement et le serveur répond par une redirection — c'est le même chemin
+côté serveur, seul le retour change (voir redirectAfterPost dans devis.go).
+*/ -}}
+{{ define "title" }}{{ .Data.Demande.Lot }}{{ end }}
+
+{{ define "content" }}
+{{- $d := .Data }}
+{{- $peutEcrire := .Can "devis:write" }}
+
+<p class="fil"><a href="/devis">{{ .T "devis.comparaison.retour" }}</a></p>
+
+<h1>{{ $d.Demande.Lot }}</h1>
+
+{{- if $d.Demande.Description }}
+<p class="lede">{{ $d.Demande.Description }}</p>
+{{- end }}
+
+<p class="demande__meta">
+    <span>{{ .T "devis.champ.envoyee_le" }} {{ $d.Demande.EnvoyeeLe }}</span>
+    <span>{{ .T "devis.index.nb_devis" "Nombre" $d.Demande.NbDevis }}</span>
+    {{- if $d.Demande.Ecart }}
+    <span>{{ .T "devis.comparaison.ecart_total" "Montant" $d.Demande.Ecart }}</span>
+    {{- end }}
+</p>
+
+{{- if $d.Avis.Message }}
+<p class="avis {{ if $d.Avis.Erreur }}avis--erreur{{ else }}avis--succes{{ end }}"
+   role="{{ if $d.Avis.Erreur }}alert{{ else }}status{{ end }}">{{ $d.Avis.Message }}</p>
+{{- end }}
+
+{{- if $d.Demande.Close }}
+<p class="avis avis--succes" role="status">{{ .T "devis.comparaison.close" "Entreprise" $d.Demande.Retenu }}</p>
+{{- end }}
+
+<section class="card card--large" aria-labelledby="titre-comparaison">
+    <h2 id="titre-comparaison">{{ .T "devis.comparaison.heading" }}</h2>
+
+    {{- if not $d.Devis }}
+    <p>{{ .T "devis.comparaison.vide" }}</p>
+    {{- else }}
+    <div class="tableau-defilant">
+        <table class="tableau">
+            <caption class="sr-only">{{ .T "devis.comparaison.legende" }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{ .T "devis.champ.entreprise" }}</th>
+                    <th scope="col" class="tableau__nombre">{{ .T "devis.champ.montant" }}</th>
+                    <th scope="col" class="tableau__nombre">{{ .T "devis.comparaison.ecart" }}</th>
+                    <th scope="col">{{ .T "devis.champ.recu_le" }}</th>
+                    <th scope="col">{{ .T "devis.champ.validite" }}</th>
+                    <th scope="col">{{ .T "devis.champ.statut" }}</th>
+                    {{- if $peutEcrire }}
+                    <th scope="col">{{ .T "devis.comparaison.actions" }}</th>
+                    {{- end }}
+                </tr>
+            </thead>
+            <tbody>
+                {{- range $d.Devis }}
+                <tr class="devis devis--{{ .Statut }}">
+                    <th scope="row">
+                        <span class="devis__entreprise">{{ .Entreprise }}</span>
+                        {{- if .Email }}<span class="devis__contact">{{ .Email }}</span>{{ end }}
+                        {{- if .Telephone }}<span class="devis__contact">{{ .Telephone }}</span>{{ end }}
+                        {{- if .Notes }}<span class="devis__notes">{{ .Notes }}</span>{{ end }}
+                    </th>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Montant }}</td>
+                    <td class="tableau__nombre">
+                        {{- if .Ecart }}{{ $.T "devis.comparaison.ecart_valeur" "Montant" .Ecart }}
+                        {{- else }}<span class="devis__reference">{{ $.T "devis.comparaison.moins_disant" }}</span>{{ end }}
+                    </td>
+                    <td>{{ .RecuLe }}</td>
+                    <td>
+                        {{- if .ValideAu }}
+                        {{ .ValideAu }}
+                        {{- if .Expire }}<span class="statut statut--expire">{{ $.T "devis.comparaison.expire" }}</span>{{ end }}
+                        {{- else }}<span class="devis__vide">{{ $.T "devis.comparaison.validite_inconnue" }}</span>{{ end }}
+                    </td>
+                    <td><span class="statut statut--{{ .Statut }}">{{ .Libelle }}</span></td>
+                    {{- if $peutEcrire }}
+                    <td class="tableau__actions">
+                        {{- if .EnAttente }}
+                        <form method="post" action="{{ .RetenirURL }}"
+                              hx-post="{{ .RetenirURL }}"
+                              hx-confirm="{{ $.T "devis.action.retenir_confirmation" "Entreprise" .Entreprise }}">
+                            <button class="button" type="submit">{{ $.T "devis.action.retenir" }}</button>
+                        </form>
+                        <form method="post" action="{{ .RefuserURL }}"
+                              hx-post="{{ .RefuserURL }}"
+                              hx-confirm="{{ $.T "devis.action.refuser_confirmation" "Entreprise" .Entreprise }}">
+                            <button class="button button--discret" type="submit">{{ $.T "devis.action.refuser" }}</button>
+                        </form>
+                        {{- else }}
+                        <span class="devis__vide">{{ $.T "devis.comparaison.tranche" }}</span>
+                        {{- end }}
+                    </td>
+                    {{- end }}
+                </tr>
+                {{- end }}
+            </tbody>
+        </table>
+    </div>
+    {{- if $peutEcrire }}
+    <p class="note">{{ .T "devis.comparaison.avertissement" }}</p>
+    {{- end }}
+    {{- end }}
+</section>
+
+{{- if $d.Demande.Artisans }}
+<section class="card" aria-labelledby="titre-artisans">
+    <h2 id="titre-artisans">{{ .T "devis.comparaison.artisans" }}</h2>
+    <ul class="acces">
+        {{- range $d.Demande.Artisans }}
+        <li>
+            <span class="acces__domaine">{{ .Entreprise }}</span>
+            <span class="acces__droit">{{ .Email }}{{ if and .Email .Telephone }} · {{ end }}{{ .Telephone }}</span>
+        </li>
+        {{- end }}
+    </ul>
+</section>
+{{- end }}
+
+{{- if $peutEcrire }}
+{{- if $d.Demande.Close }}
+<section class="card" aria-labelledby="titre-ajout">
+    <h2 id="titre-ajout">{{ .T "devis.ajout.heading" }}</h2>
+    <p>{{ .T "devis.ajout.impossible" }}</p>
+</section>
+{{- else }}
+<section class="card" aria-labelledby="titre-ajout">
+    <h2 id="titre-ajout">{{ .T "devis.ajout.heading" }}</h2>
+
+    {{- if $d.Form.Error }}
+    <p class="avis avis--erreur" role="alert">{{ $d.Form.Error }}</p>
+    {{- end }}
+
+    <form class="formulaire" method="post" action="{{ $d.Form.Action }}">
+        <div class="champ">
+            <label for="entreprise">{{ .T "devis.champ.entreprise" }}</label>
+            <input id="entreprise" name="entreprise" type="text" value="{{ $d.Form.Entreprise }}"
+                   list="artisans-sollicites" maxlength="200" required>
+            {{- if $d.Form.Artisans }}
+            <datalist id="artisans-sollicites">
+                {{- range $d.Form.Artisans }}
+                <option value="{{ . }}"></option>
+                {{- end }}
+            </datalist>
+            {{- end }}
+        </div>
+
+        <div class="champ">
+            <label for="email">{{ .T "devis.champ.email" }}</label>
+            <input id="email" name="email" type="email" value="{{ $d.Form.Email }}" inputmode="email">
+        </div>
+
+        <div class="champ">
+            <label for="telephone">{{ .T "devis.champ.telephone" }}</label>
+            <input id="telephone" name="telephone" type="tel" value="{{ $d.Form.Telephone }}" inputmode="tel">
+        </div>
+
+        <div class="champ">
+            <label for="montant">{{ .T "devis.champ.montant" }}</label>
+            <input id="montant" name="montant" type="text" value="{{ $d.Form.Montant }}"
+                   inputmode="decimal" required>
+            <p class="note">{{ .T "devis.champ.montant_aide" }}</p>
+        </div>
+
+        <div class="champ">
+            <label for="date_reception">{{ .T "devis.champ.recu_le" }}</label>
+            <input id="date_reception" name="date_reception" type="date"
+                   value="{{ $d.Form.DateReception }}" required>
+        </div>
+
+        <div class="champ">
+            <label for="validite_jours">{{ .T "devis.champ.validite_jours" }}</label>
+            <input id="validite_jours" name="validite_jours" type="number" min="0" step="1"
+                   value="{{ $d.Form.Validite }}">
+            <p class="note">{{ .T "devis.champ.validite_aide" }}</p>
+        </div>
+
+        <div class="champ">
+            <label for="notes">{{ .T "devis.champ.notes" }}</label>
+            <textarea id="notes" name="notes" rows="3">{{ $d.Form.Notes }}</textarea>
+        </div>
+
+        <div class="actions">
+            <button class="button" type="submit">{{ .T "devis.ajout.soumettre" }}</button>
+        </div>
+    </form>
+</section>
+{{- end }}
+{{- end }}
+{{ end }}

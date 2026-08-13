@@ -10,6 +10,7 @@ import (
 
 	"github.com/Romain-Badino/Avanti/internal/adapters/postgres"
 	"github.com/Romain-Badino/Avanti/internal/adapters/web"
+	"github.com/Romain-Badino/Avanti/internal/devis"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/config"
@@ -34,6 +35,11 @@ type instance struct {
 	// accounts est le service du domaine identity, monté sur le dépôt PostgreSQL et
 	// le hacheur argon2id.
 	accounts *identity.AccountService
+
+	// devisService porte les cas d'usage de la consultation des artisans, montés
+	// sur leur dépôt PostgreSQL. L'adapter web le recevra tel quel : c'est le
+	// domaine qu'il voit, jamais sa persistance (R4).
+	devisService *devis.Service
 
 	// oauthStore est le magasin du serveur d'autorisation. Il vit dans la famille
 	// postgres et sera injecté dans l'adapter web : c'est le point où les deux
@@ -90,14 +96,35 @@ func openInstance(ctx context.Context, stderr io.Writer) (*instance, func(), err
 		return nil, func() {}, err
 	}
 
+	devisService, err := newDevisService(pool)
+	if err != nil {
+		pool.Close()
+		return nil, func() {}, err
+	}
+
 	return &instance{
-		cfg:        cfg,
-		logger:     logger,
-		build:      platform.Build(),
-		pool:       pool,
-		accounts:   accounts,
-		oauthStore: oauthStore,
+		cfg:          cfg,
+		logger:       logger,
+		build:        platform.Build(),
+		pool:         pool,
+		accounts:     accounts,
+		devisService: devisService,
+		oauthStore:   oauthStore,
 	}, pool.Close, nil
+}
+
+// newDevisService branche le domaine des devis sur son dépôt PostgreSQL.
+//
+// L'horloge et le générateur d'identifiants restent ceux par défaut : ce sont
+// des dépendances que le domaine expose pour ses tests, pas des réglages
+// d'exploitation.
+func newDevisService(pool *pgxpool.Pool) (*devis.Service, error) {
+	repo, err := postgres.NewDevisRepo(pool)
+	if err != nil {
+		return nil, err
+	}
+
+	return devis.NewService(devis.ServiceOptions{Repo: repo})
 }
 
 // oauthPurgeTimeout borne une passe de ménage. Elle est courte : la requête est

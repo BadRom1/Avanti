@@ -570,16 +570,16 @@ bloquer une fusion.
 
 ## 8. Ce que ce document n'engage pas encore
 
-Le socle applicatif et le domaine `identity` existent — `internal/platform`,
-`internal/identity`, `adapters/postgres`, `adapters/web` et `cmd/avanti` sont
-écrits et testés — mais **les quatre packages de domaine métier ne contiennent
-toujours que leur `doc.go`**. Les règles ci-dessus ont donc été écrites avant le
-code qu'elles gouvernent, et c'est délibéré : le harnais qui les applique était
-vert avant la première ligne de socle, ce qui fait qu'aucun code n'a pu les
-enfreindre par accident en chemin.
+Le socle applicatif, le domaine `identity` et le domaine `devis` existent —
+`internal/platform`, `internal/identity`, `internal/devis`, `adapters/postgres`,
+`adapters/web` et `cmd/avanti` sont écrits et testés — mais **`planning`,
+`finance` et `document` ne contiennent toujours que leur `doc.go`**. Les règles
+ci-dessus ont donc été écrites avant le code qu'elles gouvernent, et c'est
+délibéré : le harnais qui les applique était vert avant la première ligne de
+socle, ce qui fait qu'aucun code n'a pu les enfreindre par accident en chemin.
 
-Quatre règles de fonctionnement se sont ajoutées avec le socle et l'identité, et
-valent pour la suite :
+Sept règles de fonctionnement se sont ajoutées avec le socle, l'identité et le
+premier domaine métier, et valent pour la suite :
 
 - **une migration publiée ne se modifie plus.** Les fichiers SQL sont embarqués
   dans le binaire et rejoués à chaque démarrage ; réécrire une migration déjà
@@ -606,6 +606,33 @@ valent pour la suite :
   devrait encore passer l'autre. L'URL publique de l'instance est déclarée origine
   de confiance, sans quoi un reverse proxy qui réécrit `Host` ferait refuser des
   requêtes légitimes.
+
+- **une route protégée l'est par un scope, pas par un rôle.** `requireScope` de
+  `adapters/web` décore un gestionnaire et refuse en 403 l'acteur qui ne détient
+  pas le scope voulu — lecture pour ce qui s'affiche, écriture pour ce qui change
+  quelque chose. Le décorateur est posé à l'enregistrement des routes, où la
+  garde de chacune se relit d'un coup d'œil, et il ne remplace pas
+  l'authentification : sans session on part vers `/connexion`, sans le scope on
+  reçoit un refus. C'est aussi ce que fait `view.Can` côté gabarit, de sorte que
+  ce qui s'affiche et ce qui s'exécute obéissent à la même table de rôles.
+- **l'argent est un entier de centimes, de bout en bout.** `devis.Montant`, la
+  colonne `BIGINT`, le champ de formulaire : aucun flottant nulle part, et aucune
+  fonction du domaine n'en rend un. 11 800,50 € n'a pas de représentation binaire
+  exacte, et c'est le chiffre que l'utilisateur vérifie contre le papier de
+  l'artisan. La conversion depuis et vers la notation française est le travail de
+  l'adapter web, en arithmétique entière.
+- **R2 vaut aussi en base : pas de clé étrangère entre domaines.** `devis.cree_par`
+  porte l'identifiant du compte qui a signé l'action, sans `REFERENCES users` —
+  poser la contrainte recréerait en SQL le couplage que le code refuse. À
+  l'intérieur d'un même domaine, en revanche, les clés étrangères sont la règle
+  (`devis.demande_id`), et les invariants qui comptent sont tenus par la base :
+  « un seul devis retenu par demande » est un index unique partiel, pas une
+  vérification en Go qu'une écriture concurrente pourrait doubler. Son pendant
+  — « une demande tranchée n'accepte plus de devis reçu » — l'est par un trigger
+  `BEFORE INSERT` qui verrouille la ligne de la demande avant de regarder ses
+  devis, verrou que la rétention prend elle aussi : les deux chemins se
+  sérialisent sur cette ligne, et il n'existe pas d'ordre où un devis atterrit
+  sur une comparaison close.
 
 Restent à trancher au fil de l'implémentation : le format d'échange des vues
 transverses entre domaines et adapter web, la stratégie de pagination, et la

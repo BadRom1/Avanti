@@ -1,0 +1,73 @@
+{{- /*
+Formulaire d'ouverture d'une consultation.
+
+Les lignes d'artisan sont en nombre fixe et les vides sont ignorées à
+l'enregistrement : sans JavaScript, il n'y a pas de bouton « ajouter une ligne »,
+et en proposer trois d'avance coûte moins qu'un aller-retour pour en obtenir une
+de plus.
+
+Aucun jeton CSRF ici non plus : la protection vient de
+net/http.CrossOriginProtection et de SameSite=Lax sur le cookie (voir web.go).
+*/ -}}
+{{ define "title" }}{{ .T "devis.nouvelle.title" }}{{ end }}
+
+{{ define "content" }}
+{{- $d := .Data }}
+<section class="card" aria-labelledby="titre-nouvelle-demande">
+    <h1 id="titre-nouvelle-demande">{{ .T "devis.nouvelle.heading" }}</h1>
+    <p class="note">{{ .T "devis.nouvelle.intro" }}</p>
+
+    {{- if $d.Error }}
+    <p class="avis avis--erreur" role="alert">{{ $d.Error }}</p>
+    {{- end }}
+
+    <form class="formulaire" method="post" action="{{ $d.Action }}">
+        <div class="champ">
+            <label for="lot">{{ .T "devis.champ.lot" }}</label>
+            <input id="lot" name="lot" type="text" value="{{ $d.Lot }}"
+                   maxlength="120" required autofocus>
+            <p class="note">{{ .T "devis.champ.lot_aide" }}</p>
+        </div>
+
+        <div class="champ">
+            <label for="description">{{ .T "devis.champ.description" }}</label>
+            <textarea id="description" name="description" rows="4">{{ $d.Description }}</textarea>
+        </div>
+
+        <div class="champ">
+            <label for="date_envoi">{{ .T "devis.champ.date_envoi" }}</label>
+            <input id="date_envoi" name="date_envoi" type="date" value="{{ $d.DateEnvoi }}" required>
+        </div>
+
+        <fieldset class="champs-groupe">
+            <legend>{{ .T "devis.nouvelle.artisans" }}</legend>
+            <p class="note">{{ .T "devis.nouvelle.artisans_aide" }}</p>
+
+            {{- range $index, $artisan := $d.Artisans }}
+            <div class="artisan-ligne">
+                <div class="champ">
+                    <label for="artisan_entreprise_{{ $index }}">{{ $.T "devis.champ.entreprise" }}</label>
+                    <input id="artisan_entreprise_{{ $index }}" name="artisan_entreprise" type="text"
+                           value="{{ $artisan.Entreprise }}" maxlength="200">
+                </div>
+                <div class="champ">
+                    <label for="artisan_email_{{ $index }}">{{ $.T "devis.champ.email" }}</label>
+                    <input id="artisan_email_{{ $index }}" name="artisan_email" type="email"
+                           value="{{ $artisan.Email }}" inputmode="email">
+                </div>
+                <div class="champ">
+                    <label for="artisan_telephone_{{ $index }}">{{ $.T "devis.champ.telephone" }}</label>
+                    <input id="artisan_telephone_{{ $index }}" name="artisan_telephone" type="tel"
+                           value="{{ $artisan.Telephone }}" inputmode="tel">
+                </div>
+            </div>
+            {{- end }}
+        </fieldset>
+
+        <div class="actions">
+            <button class="button" type="submit">{{ .T "devis.nouvelle.soumettre" }}</button>
+            <a class="button button--discret" href="{{ $d.RetourURL }}">{{ .T "devis.action.annuler" }}</a>
+        </div>
+    </form>
+</section>
+{{ end }}

@@ -419,3 +419,224 @@ button.button {
 .identite__connu {
     color: var(--texte-doux);
 }
+
+/* --- Domaine devis -------------------------------------------------------
+ *
+ * Une seule idée de mise en forme : la comparaison se lit en descendant une
+ * colonne de montants. Tout le reste — contacts, notes, validité — est en
+ * retrait pour ne pas disputer l'attention à ce chiffre.
+ */
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: var(--rythme);
+}
+
+.fil {
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Titre visible des lecteurs d'écran seulement : la légende d'un tableau dit
+ * ce que l'œil déduit de la mise en page. */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+.card--large {
+    max-width: none;
+}
+
+/* Liste des consultations */
+
+.demandes {
+    list-style: none;
+    margin: var(--rythme) 0 0;
+    padding: 0;
+}
+
+.demande {
+    background: var(--fond-eleve);
+    border: 1px solid var(--trait);
+    border-radius: var(--rayon);
+    padding: var(--rythme);
+    margin-bottom: 0.75rem;
+}
+
+.demande__entete {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.demande__lot {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.demande__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1rem;
+    margin: 0.4rem 0 0;
+    color: var(--texte-doux);
+    font-size: 0.85rem;
+}
+
+.demande__fourchette {
+    margin: 0.35rem 0 0;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Statuts : la couleur ne porte jamais l'information seule, le libellé est
+ * toujours écrit à côté. */
+
+.statut {
+    display: inline-block;
+    border: 1px solid var(--trait);
+    border-radius: 999px;
+    padding: 0.1rem 0.6rem;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.statut--retenu {
+    border-color: #2e7d32;
+    color: #2e7d32;
+}
+
+.statut--refuse,
+.statut--expire {
+    border-color: #b3261e;
+    color: #b3261e;
+}
+
+/* Tableau de comparaison */
+
+.tableau-defilant {
+    overflow-x: auto;
+    margin-top: var(--rythme);
+}
+
+.tableau {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+}
+
+.tableau th,
+.tableau td {
+    text-align: left;
+    vertical-align: top;
+    padding: 0.55rem 0.6rem;
+    border-top: 1px solid var(--trait);
+}
+
+.tableau thead th {
+    border-top: 0;
+    border-bottom: 2px solid var(--trait);
+    color: var(--texte-doux);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+/* Les montants s'alignent à droite et en chiffres de largeur fixe : c'est ce
+ * qui permet de comparer deux nombres d'un coup d'œil plutôt qu'en les lisant. */
+.tableau__nombre {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.tableau__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.tableau__actions form {
+    margin: 0;
+}
+
+/* Un devis refusé reste lisible mais s'efface : il fait partie de l'histoire de
+ * la comparaison, plus de la décision. */
+.devis--refuse {
+    color: var(--texte-doux);
+}
+
+.devis__entreprise {
+    display: block;
+    font-weight: 600;
+}
+
+.devis__contact,
+.devis__notes,
+.devis__vide,
+.devis__reference {
+    display: block;
+    color: var(--texte-doux);
+    font-size: 0.82rem;
+    font-weight: 400;
+}
+
+.devis__notes {
+    margin-top: 0.25rem;
+    font-style: italic;
+}
+
+/* Formulaires du domaine */
+
+.champs-groupe {
+    border: 1px solid var(--trait);
+    border-radius: var(--rayon);
+    padding: var(--rythme);
+    margin: 0;
+}
+
+.champs-groupe legend {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--texte-doux);
+    padding-inline: 0.4rem;
+}
+
+.artisan-ligne {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 0.75rem;
+    padding-block: 0.5rem;
+}
+
+.artisan-ligne + .artisan-ligne {
+    border-top: 1px solid var(--trait);
+}
+
+.champ textarea {
+    font: inherit;
+    color: var(--texte);
+    background: var(--fond);
+    border: 1px solid var(--trait);
+    border-radius: var(--rayon);
+    padding: 0.5rem 0.65rem;
+    resize: vertical;
+}
+
+.champ textarea:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+    border-color: var(--focus);
+}

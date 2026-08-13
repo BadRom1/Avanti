@@ -1,0 +1,62 @@
+{{- /*
+Liste des consultations. Chaque entrée dit d'un coup d'œil ce qu'on veut savoir :
+où en est le lot de travaux, combien d'offres sont arrivées, et dans quelle
+fourchette de prix.
+
+Le bouton de création n'apparaît que pour qui détient devis:write. Ce n'est pas
+la sécurité — la route est gardée côté serveur — c'est la cohérence : annoncer
+une action qui répondra « accès refusé » serait une promesse en l'air.
+*/ -}}
+{{ define "title" }}{{ .T "devis.index.title" }}{{ end }}
+
+{{ define "content" }}
+{{- $d := .Data }}
+<h1>{{ .T "devis.index.heading" }}</h1>
+<p class="lede">{{ .T "devis.index.intro" }}</p>
+
+{{- if $d.Avis.Message }}
+<p class="avis {{ if $d.Avis.Erreur }}avis--erreur{{ else }}avis--succes{{ end }}"
+   role="{{ if $d.Avis.Erreur }}alert{{ else }}status{{ end }}">{{ $d.Avis.Message }}</p>
+{{- end }}
+
+{{- if .Can "devis:write" }}
+<p class="actions"><a class="button" href="{{ $d.NouvellePath }}">{{ .T "devis.index.nouvelle" }}</a></p>
+{{- end }}
+
+{{- if not $d.Demandes }}
+<section class="card">
+    <p>{{ .T "devis.index.vide" }}</p>
+</section>
+{{- else }}
+<ul class="demandes">
+    {{- range $d.Demandes }}
+    <li class="demande">
+        <div class="demande__entete">
+            <a class="demande__lot" href="{{ .Path }}">{{ .Lot }}</a>
+            {{- if .Close }}
+            <span class="statut statut--retenu">{{ $.T "devis.index.retenu" "Entreprise" .Retenu }}</span>
+            {{- else }}
+            <span class="statut statut--recu">{{ $.T "devis.index.en_cours" }}</span>
+            {{- end }}
+        </div>
+
+        <p class="demande__meta">
+            <span>{{ $.T "devis.champ.envoyee_le" }} {{ .EnvoyeeLe }}</span>
+            <span>{{ $.T "devis.index.nb_devis" "Nombre" .NbDevis }}</span>
+            <span>{{ $.T "devis.index.nb_artisans" "Nombre" .NbArtisans }}</span>
+        </p>
+
+        {{- if .MontantBas }}
+        <p class="demande__fourchette">
+            {{- if .MontantHaut }}
+            {{ $.T "devis.index.fourchette" "Bas" .MontantBas "Haut" .MontantHaut }}
+            {{- else }}
+            {{ $.T "devis.index.montant_unique" "Montant" .MontantBas }}
+            {{- end }}
+        </p>
+        {{- end }}
+    </li>
+    {{- end }}
+</ul>
+{{- end }}
+{{ end }}

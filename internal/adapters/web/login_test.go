@@ -36,6 +36,10 @@ func TestNewRejectsMissingDependency(t *testing.T) {
 		"sans URL publique": {
 			Logger: logging.Discard(), Accounts: full.accounts, Sessions: memstore.New(),
 		},
+		"sans service de devis": {
+			Logger: logging.Discard(), Accounts: full.accounts, Sessions: memstore.New(),
+			BaseURL: baseURL, OAuthStorage: full.oauth, OAuthSecret: []byte(oauthSecretTest),
+		},
 	}
 
 	for name, opts := range cases {

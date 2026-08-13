@@ -147,6 +147,7 @@ func serve(ctx context.Context, stderr io.Writer) error {
 		Sessions:     sessionStore,
 		BaseURL:      app.cfg.BaseURL,
 		OAuthStorage: app.oauthStore,
+		Devis:        app.devisService,
 		OAuthSecret:  app.cfg.OAuthSecret,
 	})
 	if err != nil {

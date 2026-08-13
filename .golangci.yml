@@ -87,6 +87,8 @@ linters:
       ignore-rules:
         # Vocabulaire métier — le langage ubiquitaire du projet.
         - devis
+        - artisans
+        - statuts
         - facture
         - acompte
         - etape
@@ -117,8 +119,12 @@ linters:
         - enveloppes
         - exemple
         - existant
+        - inventer
+        - inventee
         - manipule
         - normalisation
+        - partiel
+        - partielle
         - persistance
         - pointeur
         - programme
