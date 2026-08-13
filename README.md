@@ -32,7 +32,7 @@ choix et leurs motifs sont détaillés dans [docs/ARCHITECTURE.md](docs/ARCHITEC
 
 ## Prérequis
 
-- **Go 1.26.5** ou plus récent (voir la directive `go` de `go.mod`)
+- **Go 1.26.6** ou plus récent (voir la directive `go` de `go.mod`)
 - **make**, **git**, **curl**
 - **Docker** — pour lancer Postgres en développement
 - Aucun outil de qualité à installer à la main : `make tools` s'en charge et les

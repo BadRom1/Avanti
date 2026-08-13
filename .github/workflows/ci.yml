@@ -15,7 +15,7 @@ concurrency:
 
 env:
   # Doit rester aligné sur la directive `go` de go.mod.
-  GO_VERSION: "1.26.5"
+  GO_VERSION: "1.26.6"
 
 jobs:
   lint:
