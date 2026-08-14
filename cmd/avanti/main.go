@@ -150,6 +150,7 @@ func serve(ctx context.Context, stderr io.Writer) error {
 		Devis:        app.devisService,
 		Documents:    app.documentsService,
 		Finance:      app.financeService,
+		Planning:     app.planningService,
 		Exports:      newExports(),
 		OAuthSecret:  app.cfg.OAuthSecret,
 	})

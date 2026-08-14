@@ -27,6 +27,7 @@ import (
 	"github.com/Romain-Badino/Avanti/internal/document"
 	"github.com/Romain-Badino/Avanti/internal/finance"
 	"github.com/Romain-Badino/Avanti/internal/identity"
+	"github.com/Romain-Badino/Avanti/internal/planning"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/logging"
 )
@@ -120,6 +121,7 @@ type site struct {
 	documents *memDocumentRepo
 	storage   *memDocumentStorage
 	finance   *memFinanceRepo
+	planning  *memPlanningRepo
 }
 
 // newSite monte l'adapter avec trois comptes : un propriétaire, un
@@ -192,6 +194,12 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 		t.Fatalf("finance.NewService() échoué : %v", err)
 	}
 
+	planningRepo := newMemPlanningRepo()
+	planningService, err := planning.NewService(planning.ServiceOptions{Repo: planningRepo})
+	if err != nil {
+		t.Fatalf("planning.NewService() échoué : %v", err)
+	}
+
 	handler, err := web.New(web.Options{
 		Logger:       logging.Discard(),
 		Build:        platform.BuildInfo{Version: "v0.0.0-test"},
@@ -203,6 +211,7 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 		Devis:        devisService,
 		Documents:    documentsService,
 		Finance:      financeService,
+		Planning:     planningService,
 		Exports: map[string]finance.ExportFormat{
 			"csv": csvExportStub{},
 			"pdf": pdfExportStub{},
@@ -221,6 +230,7 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 		documents: documentRepo,
 		storage:   documentStorage,
 		finance:   financeRepo,
+		planning:  planningRepo,
 	}
 }
 

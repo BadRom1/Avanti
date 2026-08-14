@@ -640,3 +640,137 @@ button.button {
     outline-offset: 1px;
     border-color: var(--focus);
 }
+
+/* --- Planning ---------------------------------------------------------------
+ *
+ * Le Gantt est une table à layout fixe : une colonne de libellés puis 60
+ * colonnes de largeur égale. Les barres sont des cellules dont le colspan,
+ * calculé côté serveur, donne la proportion — la CSP (style-src 'self', sans
+ * 'unsafe-inline') interdit les attributs style, et colspan est un attribut de
+ * structure, pas du style. */
+
+.gantt {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+    min-width: 44rem;
+}
+
+.gantt__col-libelle {
+    width: 14rem;
+}
+
+.gantt__libelle {
+    text-align: left;
+    font-weight: 600;
+    padding: 0.45rem 0.6rem 0.45rem 0;
+    border-top: 1px solid var(--trait);
+    white-space: normal;
+}
+
+.gantt__libelle .statut {
+    margin-left: 0.35rem;
+}
+
+.gantt__libelle--reel {
+    font-weight: 400;
+    color: var(--texte-doux);
+    font-size: 0.78rem;
+    border-top: 0;
+    padding-top: 0;
+}
+
+.gantt__axe {
+    text-align: left;
+    color: var(--texte-doux);
+    font-size: 0.75rem;
+    font-weight: 400;
+    border-bottom: 2px solid var(--trait);
+    border-left: 1px solid var(--trait);
+    padding: 0.2rem 0.3rem;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.gantt__ligne td {
+    height: 1.4rem;
+    border-top: 1px solid var(--trait);
+    padding: 0;
+}
+
+.gantt__ligne--reelle td {
+    height: 0.5rem;
+    border-top: 0;
+}
+
+.gantt__vide {
+    background: transparent;
+}
+
+.gantt__barre {
+    border-radius: 3px;
+}
+
+.gantt__barre--prevue {
+    background: color-mix(in srgb, var(--accent) 45%, var(--fond));
+}
+
+.gantt__barre--terminee {
+    background: color-mix(in srgb, #2e7d32 40%, var(--fond));
+}
+
+.gantt__barre--retard {
+    background: color-mix(in srgb, #b3261e 55%, var(--fond));
+}
+
+.gantt__barre--reelle {
+    background: var(--texte-doux);
+}
+
+/* Les jalons sont des marqueurs d'une colonne sur leur propre ligne fine. */
+.gantt__ligne--jalon td {
+    height: 0.9rem;
+}
+
+.gantt__jalon {
+    background: var(--accent);
+    border-radius: 999px;
+}
+
+.gantt__jalon--atteint {
+    background: #2e7d32;
+}
+
+.gantt__jalon--retard {
+    background: #b3261e;
+}
+
+/* Statuts du planning : mêmes pastilles que les devis, palette du domaine. */
+
+.statut--terminee {
+    border-color: #2e7d32;
+    color: #2e7d32;
+}
+
+.statut--en_cours {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.statut--retard {
+    border-color: #b3261e;
+    color: #b3261e;
+}
+
+.statut--prete {
+    border-color: var(--focus);
+    color: var(--focus);
+}
+
+/* Cases à cocher des prérequis : une par ligne, cliquables sur tout le
+ * libellé. */
+.case {
+    display: block;
+    padding: 0.15rem 0;
+}

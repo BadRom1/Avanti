@@ -253,6 +253,11 @@ func startAvanti(t *testing.T) *avantiInstance {
 		t.Fatalf("newFinanceService() échoué : %v", err)
 	}
 
+	planningService, err := newPlanningService(pool)
+	if err != nil {
+		t.Fatalf("newPlanningService() échoué : %v", err)
+	}
+
 	documentRepo, err := postgres.NewDocumentRepo(pool)
 	if err != nil {
 		t.Fatalf("postgres.NewDocumentRepo() échoué : %v", err)
@@ -294,6 +299,7 @@ func startAvanti(t *testing.T) *avantiInstance {
 		Devis:        devisService,
 		Documents:    documentsService,
 		Finance:      financeService,
+		Planning:     planningService,
 		Exports:      newExports(),
 	})
 	if err != nil {

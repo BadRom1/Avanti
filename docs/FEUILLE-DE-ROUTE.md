@@ -43,19 +43,17 @@ Le rituel de travail par lot est décrit dans `CLAUDE.md` ; l'architecture dans
   `finance.ExportFormat` (second point d'extension plugin), justificatifs de
   facture rattachés et listés dans l'export, scopes finance:read/write.
 
+- **Lot 8 — Domaine Planning** : entités `Etape` (statut et retards DÉRIVÉS
+  des dates réelles, jamais stockés, transitions Start/Finish) et `Jalon`,
+  dépendances en table de jointure intra-domaine avec `CheckAcyclic` pur
+  (cycle = erreur métier) rejoué sous verrou consultatif avec l'existence des
+  prérequis et leur terminaison au démarrage, garde optimiste sur toutes les
+  mises à jour, Gantt dérivé pur (positions en millièmes entiers) rendu
+  serveur en table colspan compatible CSP stricte, section « prêtes à
+  démarrer » (candidates à la parallélisation), référence faible optionnelle
+  vers un devis retenu, scopes planning:read/write.
+
 ## À faire
-
-### Lot 8 — Domaine Planning
-
-- Entités : `Etape` (dates prévues/réelles, dépendances entre étapes, statut),
-  `Jalon`. Détection de cycle dans les dépendances = erreur métier.
-- Le Gantt est DÉRIVÉ des étapes et dépendances (pas une entité) ; deux étapes
-  sans dépendance commune sont candidates à la parallélisation.
-- Détection de retard = comparaison prévu vs réel/aujourd'hui.
-- Référence faible optionnelle d'une étape vers un devis retenu (`devisID`).
-- UI : liste des étapes + vue Gantt rendue serveur (SVG ou table CSS — pas de
-  lib JS), jalons, retards mis en évidence.
-- Scopes planning:read/write (accessibles au collaborateur/architecte).
 
 ### Lot 9 — Serveur MCP
 

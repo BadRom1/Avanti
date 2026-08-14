@@ -82,7 +82,7 @@ var navBlueprint = []struct {
 }{
 	{href: "/", messageID: "nav.dashboard", scope: "", available: true},
 	{href: devisPath, messageID: "nav.devis", scope: identity.ScopeDevisRead, available: true},
-	{href: "/planning", messageID: "nav.planning", scope: identity.ScopePlanningRead, available: false},
+	{href: planningPath, messageID: "nav.planning", scope: identity.ScopePlanningRead, available: true},
 	{href: financesPath, messageID: "nav.finance", scope: identity.ScopeFinanceRead, available: true},
 	{href: documentsPath, messageID: "nav.documents", scope: identity.ScopeDocumentRead, available: true},
 }

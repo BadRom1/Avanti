@@ -7,6 +7,9 @@ coverage.html
 *.prof
 *.test
 
+# Résidus de validation manuelle (serveur lancé à la main)
+*.pid
+
 # Configuration locale : ne doit jamais entrer dans l'historique
 .env
 .env.*
