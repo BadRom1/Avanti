@@ -25,6 +25,7 @@ import (
 	"github.com/Romain-Badino/Avanti/internal/adapters/web"
 	"github.com/Romain-Badino/Avanti/internal/devis"
 	"github.com/Romain-Badino/Avanti/internal/document"
+	"github.com/Romain-Badino/Avanti/internal/finance"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/logging"
@@ -118,6 +119,7 @@ type site struct {
 	devis     *memDevisRepo
 	documents *memDocumentRepo
 	storage   *memDocumentStorage
+	finance   *memFinanceRepo
 }
 
 // newSite monte l'adapter avec trois comptes : un propriétaire, un
@@ -184,6 +186,12 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 		t.Fatalf("document.NewService() échoué : %v", err)
 	}
 
+	financeRepo := newMemFinanceRepo()
+	financeService, err := finance.NewService(finance.ServiceOptions{Repo: financeRepo})
+	if err != nil {
+		t.Fatalf("finance.NewService() échoué : %v", err)
+	}
+
 	handler, err := web.New(web.Options{
 		Logger:       logging.Discard(),
 		Build:        platform.BuildInfo{Version: "v0.0.0-test"},
@@ -194,6 +202,11 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 		OAuthSecret:  []byte(oauthSecretTest),
 		Devis:        devisService,
 		Documents:    documentsService,
+		Finance:      financeService,
+		Exports: map[string]finance.ExportFormat{
+			"csv": csvExportStub{},
+			"pdf": pdfExportStub{},
+		},
 	})
 	if err != nil {
 		t.Fatalf("web.New() échoué : %v", err)
@@ -207,6 +220,7 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 		devis:     devisRepo,
 		documents: documentRepo,
 		storage:   documentStorage,
+		finance:   financeRepo,
 	}
 }
 

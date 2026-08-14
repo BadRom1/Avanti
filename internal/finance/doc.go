@@ -5,10 +5,11 @@
 // Le vocabulaire métier français (Facture, Acompte) est conservé dans les
 // identifiants exportés : c'est le langage ubiquitaire du projet.
 //
-// Contenu attendu : les entités et invariants du domaine (un cumul d'Acomptes ne
-// dépasse pas le montant engagé), les ports (persistance, horloge, taux de TVA)
-// et les services applicatifs. Les montants sont manipulés en centimes entiers,
-// jamais en flottants.
+// Contenu : les entités et invariants du domaine (le cumul des Acomptes d'un
+// devis ne dépasse pas le montant engagé), les ports — persistance
+// (Repository) et rendu du dossier d'assurance (ExportFormat, second point
+// d'extension officiel) — et les services applicatifs. Les montants sont
+// manipulés en centimes entiers, jamais en flottants.
 //
 // Frontières : ce package n'importe aucun autre domaine, aucun adapter, ni
 // internal/platform. Une Facture référence son Devis par identifiant faible

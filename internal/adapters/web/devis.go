@@ -82,6 +82,14 @@ var avisCatalog = map[string]struct {
 	// L'avis du domaine document vit dans la même table : un dépôt rattaché à
 	// un devis redirige vers la page de comparaison, qui doit savoir le lire.
 	avisDocumentAjoute: {messageID: "document.avis.ajoute"},
+	// Les avis du domaine finance (codes déclarés dans finance.go) : une seule
+	// table pour tout le site, chaque page sait lire tous les codes.
+	avisFactureAjoutee:      {messageID: "finance.avis.facture_ajoutee"},
+	avisAcompteAjoute:       {messageID: "finance.avis.acompte_ajoute"},
+	avisFacturePayee:        {messageID: "finance.avis.facture_payee"},
+	avisAssuranceEnvoyee:    {messageID: "finance.avis.assurance_envoyee"},
+	avisAssuranceRemboursee: {messageID: "finance.avis.assurance_remboursee"},
+	avisPieceModifiee:       {messageID: "finance.avis.piece_modifiee", erreur: true},
 }
 
 // devisErrorMessages traduit les erreurs métier en messages du catalogue.

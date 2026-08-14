@@ -18,6 +18,7 @@ import (
 
 	"github.com/Romain-Badino/Avanti/internal/devis"
 	"github.com/Romain-Badino/Avanti/internal/document"
+	"github.com/Romain-Badino/Avanti/internal/finance"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/server"
@@ -77,6 +78,17 @@ type Options struct {
 	// PostgreSQL des métadonnées ni le stockage du contenu, que cmd/avanti
 	// choisit et injecte dans le service (R4).
 	Documents *document.Service
+	// Finance porte les cas d'usage de l'argent du chantier. Obligatoire.
+	Finance *finance.Service
+	// Exports sont les formats du dossier d'assurance, indexés par le segment
+	// d'URL qui les désigne (« csv », « pdf »). Obligatoire, au moins un
+	// format.
+	//
+	// Ce sont des implémentations du port finance.ExportFormat — le second
+	// point d'extension officiel (docs/ARCHITECTURE.md §3) — construites et
+	// choisies par cmd/avanti (R4) : cet adapter ne sait pas lesquelles sont
+	// branchées, il sert celles qu'on lui donne et répond 404 pour le reste.
+	Exports map[string]finance.ExportFormat
 	// Clock sert d'horloge au serveur d'autorisation et aux dates proposées par
 	// les formulaires. nil signifie time.Now ; les tests en injectent une pour ne
 	// pas avoir à attendre l'expiration d'un jeton, et pour que les valeurs
@@ -98,7 +110,13 @@ type Handler struct {
 	oauth     *oauthServer
 	devis     *devis.Service
 	documents *document.Service
-	clock     func() time.Time
+	finance   *finance.Service
+	exports   map[string]finance.ExportFormat
+	// baseHost est l'hôte de l'URL publique : la seule donnée d'instance dont
+	// un document exporté dispose pour se nommer — deux chantiers, deux
+	// instances, deux hôtes.
+	baseHost string
+	clock    func() time.Time
 }
 
 // New construit l'adapter : catalogue de traductions, gabarits compilés une
@@ -107,21 +125,8 @@ type Handler struct {
 // Toute erreur de gabarit ou de catalogue est détectée ici, au démarrage, plutôt
 // qu'à la première requête d'un utilisateur.
 func New(opts Options) (*Handler, error) {
-	switch {
-	case opts.Logger == nil:
-		return nil, errors.New("web : journal manquant")
-	case opts.Accounts == nil:
-		return nil, errors.New("web : service de comptes manquant")
-	case opts.Sessions == nil:
-		return nil, errors.New("web : magasin de sessions manquant")
-	case opts.BaseURL == nil:
-		return nil, errors.New("web : URL publique manquante")
-	case opts.OAuthStorage == nil:
-		return nil, errors.New("web : magasin OAuth manquant")
-	case opts.Devis == nil:
-		return nil, errors.New("web : service des devis manquant")
-	case opts.Documents == nil:
-		return nil, errors.New("web : service des documents manquant")
+	if err := checkOptions(opts); err != nil {
+		return nil, err
 	}
 
 	catalog, err := NewCatalog()
@@ -151,6 +156,9 @@ func New(opts Options) (*Handler, error) {
 		oauth:     oauth,
 		devis:     opts.Devis,
 		documents: opts.Documents,
+		finance:   opts.Finance,
+		exports:   opts.Exports,
+		baseHost:  opts.BaseURL.Host,
 		clock:     opts.Clock,
 	}
 
@@ -161,6 +169,7 @@ func New(opts Options) (*Handler, error) {
 	h.mux.Handle("GET "+staticPrefix, http.StripPrefix(staticPrefix, staticFileServer()))
 	h.mountDevis()
 	h.mountDocuments()
+	h.mountFinance()
 	h.mountOAuth()
 	h.mux.HandleFunc("/", h.handleNotFound)
 
@@ -171,6 +180,33 @@ func New(opts Options) (*Handler, error) {
 	h.root = root
 
 	return h, nil
+}
+
+// checkOptions vérifie que toutes les dépendances obligatoires sont là, au
+// démarrage plutôt qu'à la première requête qui en aurait besoin.
+func checkOptions(opts Options) error {
+	switch {
+	case opts.Logger == nil:
+		return errors.New("web : journal manquant")
+	case opts.Accounts == nil:
+		return errors.New("web : service de comptes manquant")
+	case opts.Sessions == nil:
+		return errors.New("web : magasin de sessions manquant")
+	case opts.BaseURL == nil:
+		return errors.New("web : URL publique manquante")
+	case opts.OAuthStorage == nil:
+		return errors.New("web : magasin OAuth manquant")
+	case opts.Devis == nil:
+		return errors.New("web : service des devis manquant")
+	case opts.Documents == nil:
+		return errors.New("web : service des documents manquant")
+	case opts.Finance == nil:
+		return errors.New("web : service des finances manquant")
+	case len(opts.Exports) == 0:
+		return errors.New("web : aucun format d'export du dossier d'assurance")
+	default:
+		return nil
+	}
 }
 
 // mountMiddleware empile les intergiciels autour du routeur.
@@ -274,6 +310,8 @@ const (
 	pageDevisNouvelleDemande = "devis_nouvelle_demande.gohtml"
 
 	pageDocumentsIndex = "documents_index.gohtml"
+
+	pageFinanceIndex = "finance_index.gohtml"
 )
 
 // render écrit la page demandée, et bascule sur la page d'erreur si le rendu

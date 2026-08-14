@@ -149,6 +149,8 @@ func serve(ctx context.Context, stderr io.Writer) error {
 		OAuthStorage: app.oauthStore,
 		Devis:        app.devisService,
 		Documents:    app.documentsService,
+		Finance:      app.financeService,
+		Exports:      newExports(),
 		OAuthSecret:  app.cfg.OAuthSecret,
 	})
 	if err != nil {

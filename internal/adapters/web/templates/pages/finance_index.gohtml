@@ -1,0 +1,412 @@
+{{- /*
+La page unique des finances : la synthèse par devis retenu d'abord — c'est elle
+qu'on vient lire —, puis les factures, puis les acomptes, et les formulaires de
+saisie pour qui détient finance:write.
+
+Les actions (payer, envoyer à l'assurance, marquer remboursée) sont des
+formulaires POST pleins : pas de JavaScript requis, HTMX ne fait qu'épargner un
+rechargement. Les formulaires n'apparaissent que pour qui détient
+finance:write — ce n'est pas la sécurité, la route est gardée côté serveur,
+c'est la cohérence : annoncer une action qui répondra « accès refusé » serait
+une promesse en l'air.
+*/ -}}
+{{ define "title" }}{{ .T "finance.index.title" }}{{ end }}
+
+{{ define "content" }}
+{{- $d := .Data }}
+{{- $peutEcrire := .Can "finance:write" }}
+<h1>{{ .T "finance.index.heading" }}</h1>
+<p class="lede">{{ .T "finance.index.intro" }}</p>
+
+{{- if $d.Avis.Message }}
+<p class="avis {{ if $d.Avis.Erreur }}avis--erreur{{ else }}avis--succes{{ end }}"
+   role="{{ if $d.Avis.Erreur }}alert{{ else }}status{{ end }}">{{ $d.Avis.Message }}</p>
+{{- end }}
+
+{{- if $d.Exports }}
+<p class="actions">
+    {{- range $d.Exports }}
+    <a class="button button--discret" href="{{ .URL }}">{{ .Label }}</a>
+    {{- end }}
+</p>
+{{- end }}
+
+<section class="card card--large" aria-labelledby="titre-synthese">
+    <h2 id="titre-synthese">{{ .T "finance.synthese.heading" }}</h2>
+
+    {{- if and (not $d.Synthese.Lignes) (not $d.Synthese.HorsDevis) }}
+    <p>{{ .T "finance.synthese.vide" }}</p>
+    {{- else }}
+    <div class="tableau-defilant">
+        <table class="tableau">
+            <caption class="sr-only">{{ .T "finance.synthese.legende" }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{ .T "finance.synthese.devis" }}</th>
+                    <th scope="col" class="tableau__nombre">{{ .T "finance.synthese.engage" }}</th>
+                    <th scope="col" class="tableau__nombre">{{ .T "finance.synthese.facture" }}</th>
+                    <th scope="col" class="tableau__nombre">{{ .T "finance.synthese.paye" }}</th>
+                    <th scope="col" class="tableau__nombre">{{ .T "finance.synthese.rembourse" }}</th>
+                    <th scope="col" class="tableau__nombre">{{ .T "finance.synthese.reste" }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{- range $d.Synthese.Lignes }}
+                <tr>
+                    <th scope="row">{{ .Libelle }}</th>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Engage }}</td>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Facture }}</td>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Paye }}</td>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Rembourse }}</td>
+                    <td class="tableau__nombre">
+                        {{- if .ResteAPayer }}{{ $.T "devis.montant" "Valeur" .ResteAPayer }}{{ end -}}
+                    </td>
+                </tr>
+                {{- end }}
+                {{- with $d.Synthese.HorsDevis }}
+                <tr>
+                    <th scope="row">{{ .Libelle }}</th>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Engage }}</td>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Facture }}</td>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Paye }}</td>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Rembourse }}</td>
+                    <td class="tableau__nombre"></td>
+                </tr>
+                {{- end }}
+            </tbody>
+            <tfoot>
+                {{- with $d.Synthese.Total }}
+                <tr>
+                    <th scope="row">{{ .Libelle }}</th>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Engage }}</td>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Facture }}</td>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Paye }}</td>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Rembourse }}</td>
+                    <td class="tableau__nombre">
+                        {{- if .ResteAPayer }}{{ $.T "devis.montant" "Valeur" .ResteAPayer }}{{ end -}}
+                    </td>
+                </tr>
+                {{- end }}
+            </tfoot>
+        </table>
+    </div>
+    {{- end }}
+</section>
+
+<section class="card card--large" aria-labelledby="titre-factures">
+    <h2 id="titre-factures">{{ .T "finance.factures.heading" }}</h2>
+
+    {{- if not $d.Factures }}
+    <p>{{ .T "finance.factures.vide" }}</p>
+    {{- else }}
+    <div class="tableau-defilant">
+        <table class="tableau">
+            <caption class="sr-only">{{ .T "finance.factures.legende" }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{ .T "devis.champ.entreprise" }}</th>
+                    <th scope="col">{{ .T "finance.champ.devis" }}</th>
+                    <th scope="col">{{ .T "finance.champ.date" }}</th>
+                    <th scope="col" class="tableau__nombre">{{ .T "devis.champ.montant" }}</th>
+                    <th scope="col">{{ .T "finance.champ.paiement" }}</th>
+                    <th scope="col">{{ .T "finance.champ.assurance" }}</th>
+                    {{- if $peutEcrire }}
+                    <th scope="col">{{ .T "finance.champ.actions" }}</th>
+                    {{- end }}
+                </tr>
+            </thead>
+            <tbody>
+                {{- range $d.Factures }}
+                <tr>
+                    <th scope="row">
+                        <span class="devis__entreprise">{{ .Entreprise }}</span>
+                        {{- if .Numero }}<span class="devis__contact">{{ $.T "finance.champ.numero" }} {{ .Numero }}</span>{{ end }}
+                        {{- if .Notes }}<span class="devis__notes">{{ .Notes }}</span>{{ end }}
+                        {{- range .Pieces }}
+                        <span class="devis__contact"><a href="{{ .URL }}" download>{{ .Nom }}</a> · {{ .Categorie }} · {{ .Taille }}</span>
+                        {{- end }}
+                    </th>
+                    <td>
+                        {{- if .Devis }}{{ .Devis }}
+                        {{- else }}<span class="devis__vide">{{ $.T "finance.champ.hors_devis" }}</span>{{ end -}}
+                    </td>
+                    <td>{{ .Date }}</td>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Montant }}</td>
+                    <td>
+                        <span class="statut">{{ .Paiement }}</span>
+                        {{- if .PayeeLe }}<span class="devis__contact">{{ .PayeeLe }}</span>{{ end }}
+                    </td>
+                    <td>
+                        <span class="statut">{{ .Assurance }}</span>
+                        {{- if .EnvoyeeLe }}<span class="devis__contact">{{ $.T "finance.champ.envoyee_le" }} {{ .EnvoyeeLe }}</span>{{ end }}
+                        {{- if .Rembourse }}<span class="devis__contact">{{ $.T "finance.champ.rembourse_de" "Montant" .Rembourse }} {{ .RembourseLe }}</span>{{ end }}
+                    </td>
+                    {{- if $peutEcrire }}
+                    <td class="tableau__actions">
+                        {{- if .PeutPayer }}
+                        <form method="post" action="{{ .PayerURL }}"
+                              hx-post="{{ .PayerURL }}"
+                              hx-confirm="{{ $.T "finance.action.payer_confirmation" "Entreprise" .Entreprise }}">
+                            <button class="button" type="submit">{{ $.T "finance.action.payer" }}</button>
+                        </form>
+                        {{- end }}
+                        {{- if .PeutEnvoyer }}
+                        <form method="post" action="{{ .EnvoyerURL }}"
+                              hx-post="{{ .EnvoyerURL }}"
+                              hx-confirm="{{ $.T "finance.action.envoyer_confirmation" "Entreprise" .Entreprise }}">
+                            <button class="button button--discret" type="submit">{{ $.T "finance.action.envoyer" }}</button>
+                        </form>
+                        {{- end }}
+                        {{- if .PeutRembourser }}
+                        <form method="post" action="{{ .RembourserURL }}">
+                            <label class="sr-only" for="rembourse-{{ .RembourserURL }}">{{ $.T "finance.action.montant_rembourse" }}</label>
+                            <input id="rembourse-{{ .RembourserURL }}" name="montant_rembourse" type="text"
+                                   inputmode="decimal" placeholder="{{ $.T "finance.action.montant_rembourse" }}" required>
+                            <button class="button button--discret" type="submit">{{ $.T "finance.action.rembourser" }}</button>
+                        </form>
+                        {{- end }}
+                    </td>
+                    {{- end }}
+                </tr>
+                {{- end }}
+            </tbody>
+        </table>
+    </div>
+    {{- end }}
+</section>
+
+{{- /* Le dépôt d'un justificatif poste vers le domaine document, avec un
+cible_type figé à « facture » : c'est le formulaire de la comparaison des
+devis, le sélecteur de proposition remplacé par celui des factures. Il
+n'apparaît que pour qui détient document:write, et seulement s'il y a une
+facture à justifier. */}}
+{{- if and (.Can "document:write") $d.PieceForm.Factures }}
+<section class="card" aria-labelledby="titre-justificatifs">
+    <h2 id="titre-justificatifs">{{ .T "finance.pieces.heading" }}</h2>
+
+    <form class="formulaire" method="post" action="{{ $d.PieceForm.Action }}" enctype="multipart/form-data">
+        <input type="hidden" name="cible_type" value="{{ $d.PieceForm.CibleType }}">
+
+        <div class="champ">
+            <label for="justificatif-facture">{{ .T "finance.pieces.facture" }}</label>
+            <select id="justificatif-facture" name="cible_id" required>
+                {{- range $d.PieceForm.Factures }}
+                <option value="{{ .ID }}">{{ .Label }}</option>
+                {{- end }}
+            </select>
+        </div>
+
+        <div class="champ">
+            <label for="justificatif-fichier">{{ .T "document.champ.fichier" }}</label>
+            <input id="justificatif-fichier" name="fichier" type="file"
+                   accept="application/pdf,image/jpeg,image/png,image/webp" required>
+            <p class="note">{{ .T "document.champ.fichier_aide" }}</p>
+        </div>
+
+        <div class="champ">
+            <label for="justificatif-categorie">{{ .T "document.champ.categorie" }}</label>
+            <select id="justificatif-categorie" name="categorie" required>
+                {{- range $d.PieceForm.Categories }}
+                <option value="{{ .Value }}" {{ if .Selected }}selected{{ end }}>{{ .Label }}</option>
+                {{- end }}
+            </select>
+        </div>
+
+        <div class="champ">
+            <label for="justificatif-description">{{ .T "document.champ.description" }}</label>
+            <textarea id="justificatif-description" name="description" rows="2"></textarea>
+        </div>
+
+        <div class="actions">
+            <button class="button" type="submit">{{ .T "finance.pieces.soumettre" }}</button>
+        </div>
+    </form>
+</section>
+{{- end }}
+
+{{- if $peutEcrire }}
+<section class="card" aria-labelledby="titre-nouvelle-facture">
+    <h2 id="titre-nouvelle-facture">{{ .T "finance.factures.nouvelle" }}</h2>
+
+    {{- if $d.FactureForm.Error }}
+    <p class="avis avis--erreur" role="alert">{{ $d.FactureForm.Error }}</p>
+    {{- end }}
+
+    <form class="formulaire" method="post" action="{{ $d.FactureForm.Action }}">
+        <div class="champ">
+            <label for="facture-devis">{{ .T "finance.champ.devis" }}</label>
+            <select id="facture-devis" name="devis_id">
+                <option value="">{{ .T "finance.champ.hors_devis" }}</option>
+                {{- range $d.FactureForm.Devis }}
+                <option value="{{ .ID }}" {{ if .Selected }}selected{{ end }}>{{ .Label }}</option>
+                {{- end }}
+            </select>
+            <p class="note">{{ .T "finance.champ.devis_aide" }}</p>
+        </div>
+
+        <div class="champ">
+            <label for="facture-entreprise">{{ .T "devis.champ.entreprise" }}</label>
+            <input id="facture-entreprise" name="entreprise" type="text"
+                   value="{{ $d.FactureForm.Entreprise }}" maxlength="200" required>
+        </div>
+
+        <div class="champ">
+            <label for="facture-montant">{{ .T "devis.champ.montant" }}</label>
+            <input id="facture-montant" name="montant" type="text" value="{{ $d.FactureForm.Montant }}"
+                   inputmode="decimal" required>
+            <p class="note">{{ .T "devis.champ.montant_aide" }}</p>
+        </div>
+
+        <div class="champ">
+            <label for="facture-date">{{ .T "finance.champ.date" }}</label>
+            <input id="facture-date" name="date_piece" type="date"
+                   value="{{ $d.FactureForm.DatePiece }}" required>
+        </div>
+
+        <div class="champ">
+            <label for="facture-numero">{{ .T "finance.champ.numero_long" }}</label>
+            <input id="facture-numero" name="numero" type="text"
+                   value="{{ $d.FactureForm.Numero }}" maxlength="80">
+        </div>
+
+        <div class="champ">
+            <label for="facture-notes">{{ .T "devis.champ.notes" }}</label>
+            <textarea id="facture-notes" name="notes" rows="3">{{ $d.FactureForm.Notes }}</textarea>
+        </div>
+
+        <div class="actions">
+            <button class="button" type="submit">{{ .T "finance.factures.soumettre" }}</button>
+        </div>
+    </form>
+</section>
+{{- end }}
+
+<section class="card card--large" aria-labelledby="titre-acomptes">
+    <h2 id="titre-acomptes">{{ .T "finance.acomptes.heading" }}</h2>
+
+    {{- if not $d.Acomptes }}
+    <p>{{ .T "finance.acomptes.vide" }}</p>
+    {{- else }}
+    <div class="tableau-defilant">
+        <table class="tableau">
+            <caption class="sr-only">{{ .T "finance.acomptes.legende" }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{ .T "devis.champ.entreprise" }}</th>
+                    <th scope="col">{{ .T "finance.champ.devis" }}</th>
+                    <th scope="col">{{ .T "finance.champ.date" }}</th>
+                    <th scope="col" class="tableau__nombre">{{ .T "devis.champ.montant" }}</th>
+                    <th scope="col">{{ .T "finance.champ.moyen" }}</th>
+                    <th scope="col">{{ .T "finance.champ.assurance" }}</th>
+                    {{- if $peutEcrire }}
+                    <th scope="col">{{ .T "finance.champ.actions" }}</th>
+                    {{- end }}
+                </tr>
+            </thead>
+            <tbody>
+                {{- range $d.Acomptes }}
+                <tr>
+                    <th scope="row">
+                        <span class="devis__entreprise">{{ .Entreprise }}</span>
+                        {{- if .Notes }}<span class="devis__notes">{{ .Notes }}</span>{{ end }}
+                    </th>
+                    <td>
+                        {{- if .Devis }}{{ .Devis }}
+                        {{- else }}<span class="devis__vide">{{ $.T "finance.champ.hors_devis" }}</span>{{ end -}}
+                    </td>
+                    <td>{{ .Date }}</td>
+                    <td class="tableau__nombre">{{ $.T "devis.montant" "Valeur" .Montant }}</td>
+                    <td>{{ .Moyen }}</td>
+                    <td>
+                        <span class="statut">{{ .Assurance }}</span>
+                        {{- if .EnvoyeeLe }}<span class="devis__contact">{{ $.T "finance.champ.envoyee_le" }} {{ .EnvoyeeLe }}</span>{{ end }}
+                        {{- if .Rembourse }}<span class="devis__contact">{{ $.T "finance.champ.rembourse_de" "Montant" .Rembourse }} {{ .RembourseLe }}</span>{{ end }}
+                    </td>
+                    {{- if $peutEcrire }}
+                    <td class="tableau__actions">
+                        {{- if .PeutEnvoyer }}
+                        <form method="post" action="{{ .EnvoyerURL }}"
+                              hx-post="{{ .EnvoyerURL }}"
+                              hx-confirm="{{ $.T "finance.action.envoyer_confirmation" "Entreprise" .Entreprise }}">
+                            <button class="button button--discret" type="submit">{{ $.T "finance.action.envoyer" }}</button>
+                        </form>
+                        {{- end }}
+                        {{- if .PeutRembourser }}
+                        <form method="post" action="{{ .RembourserURL }}">
+                            <label class="sr-only" for="rembourse-{{ .RembourserURL }}">{{ $.T "finance.action.montant_rembourse" }}</label>
+                            <input id="rembourse-{{ .RembourserURL }}" name="montant_rembourse" type="text"
+                                   inputmode="decimal" placeholder="{{ $.T "finance.action.montant_rembourse" }}" required>
+                            <button class="button button--discret" type="submit">{{ $.T "finance.action.rembourser" }}</button>
+                        </form>
+                        {{- end }}
+                    </td>
+                    {{- end }}
+                </tr>
+                {{- end }}
+            </tbody>
+        </table>
+    </div>
+    {{- end }}
+</section>
+
+{{- if $peutEcrire }}
+<section class="card" aria-labelledby="titre-nouvel-acompte">
+    <h2 id="titre-nouvel-acompte">{{ .T "finance.acomptes.nouveau" }}</h2>
+    <p class="note">{{ .T "finance.acomptes.invariant" }}</p>
+
+    {{- if $d.AcompteForm.Error }}
+    <p class="avis avis--erreur" role="alert">{{ $d.AcompteForm.Error }}</p>
+    {{- end }}
+
+    <form class="formulaire" method="post" action="{{ $d.AcompteForm.Action }}">
+        <div class="champ">
+            <label for="acompte-devis">{{ .T "finance.champ.devis" }}</label>
+            <select id="acompte-devis" name="devis_id">
+                <option value="">{{ .T "finance.champ.hors_devis" }}</option>
+                {{- range $d.AcompteForm.Devis }}
+                <option value="{{ .ID }}" {{ if .Selected }}selected{{ end }}>{{ .Label }}</option>
+                {{- end }}
+            </select>
+            <p class="note">{{ .T "finance.champ.devis_aide" }}</p>
+        </div>
+
+        <div class="champ">
+            <label for="acompte-entreprise">{{ .T "devis.champ.entreprise" }}</label>
+            <input id="acompte-entreprise" name="entreprise" type="text"
+                   value="{{ $d.AcompteForm.Entreprise }}" maxlength="200" required>
+        </div>
+
+        <div class="champ">
+            <label for="acompte-montant">{{ .T "devis.champ.montant" }}</label>
+            <input id="acompte-montant" name="montant" type="text" value="{{ $d.AcompteForm.Montant }}"
+                   inputmode="decimal" required>
+            <p class="note">{{ .T "devis.champ.montant_aide" }}</p>
+        </div>
+
+        <div class="champ">
+            <label for="acompte-date">{{ .T "finance.champ.date_versement" }}</label>
+            <input id="acompte-date" name="date_piece" type="date"
+                   value="{{ $d.AcompteForm.DatePiece }}" required>
+        </div>
+
+        <div class="champ">
+            <label for="acompte-moyen">{{ .T "finance.champ.moyen" }}</label>
+            <select id="acompte-moyen" name="moyen" required>
+                {{- range $d.AcompteForm.Moyens }}
+                <option value="{{ .Value }}" {{ if .Selected }}selected{{ end }}>{{ .Label }}</option>
+                {{- end }}
+            </select>
+        </div>
+
+        <div class="champ">
+            <label for="acompte-notes">{{ .T "devis.champ.notes" }}</label>
+            <textarea id="acompte-notes" name="notes" rows="3">{{ $d.AcompteForm.Notes }}</textarea>
+        </div>
+
+        <div class="actions">
+            <button class="button" type="submit">{{ .T "finance.acomptes.soumettre" }}</button>
+        </div>
+    </form>
+</section>
+{{- end }}
+{{ end }}

@@ -8,11 +8,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Romain-Badino/Avanti/internal/adapters/export"
 	"github.com/Romain-Badino/Avanti/internal/adapters/postgres"
 	"github.com/Romain-Badino/Avanti/internal/adapters/storage"
 	"github.com/Romain-Badino/Avanti/internal/adapters/web"
 	"github.com/Romain-Badino/Avanti/internal/devis"
 	"github.com/Romain-Badino/Avanti/internal/document"
+	"github.com/Romain-Badino/Avanti/internal/finance"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/config"
@@ -47,6 +49,10 @@ type instance struct {
 	// le dépôt PostgreSQL des métadonnées et sur le stockage de contenu que la
 	// configuration a choisi — voir newDocumentStorage.
 	documentsService *document.Service
+
+	// financeService porte les cas d'usage de l'argent du chantier, montés sur
+	// leur dépôt PostgreSQL.
+	financeService *finance.Service
 
 	// oauthStore est le magasin du serveur d'autorisation. Il vit dans la famille
 	// postgres et sera injecté dans l'adapter web : c'est le point où les deux
@@ -115,6 +121,12 @@ func openInstance(ctx context.Context, stderr io.Writer) (*instance, func(), err
 		return nil, func() {}, err
 	}
 
+	financeService, err := newFinanceService(pool)
+	if err != nil {
+		pool.Close()
+		return nil, func() {}, err
+	}
+
 	return &instance{
 		cfg:              cfg,
 		logger:           logger,
@@ -123,6 +135,7 @@ func openInstance(ctx context.Context, stderr io.Writer) (*instance, func(), err
 		accounts:         accounts,
 		devisService:     devisService,
 		documentsService: documentsService,
+		financeService:   financeService,
 		oauthStore:       oauthStore,
 	}, pool.Close, nil
 }
@@ -156,6 +169,32 @@ func newDocumentService(cfg *config.Config, pool *pgxpool.Pool) (*document.Servi
 	}
 
 	return document.NewService(document.ServiceOptions{Repo: repo, Storage: contentStorage})
+}
+
+// newFinanceService branche le domaine des finances sur son dépôt PostgreSQL.
+func newFinanceService(pool *pgxpool.Pool) (*finance.Service, error) {
+	repo, err := postgres.NewFinanceRepo(pool)
+	if err != nil {
+		return nil, err
+	}
+
+	return finance.NewService(finance.ServiceOptions{Repo: repo})
+}
+
+// newExports construit les formats du dossier d'assurance, indexés par le
+// segment d'URL qui les désigne.
+//
+// C'est le modèle d'extension de docs/ARCHITECTURE.md §3, second point
+// d'extension officiel : le port finance.ExportFormat est l'interface, ses
+// implémentations vivent dans adapters/export, et c'est ici — dans cmd/avanti,
+// seul autorisé à connaître les deux (R4) — qu'elles se branchent. Un
+// troisième format s'ajouterait par une implémentation de plus et une entrée
+// de plus dans cette map, sans toucher au domaine ni à l'adapter web.
+func newExports() map[string]finance.ExportFormat {
+	return map[string]finance.ExportFormat{
+		"csv": export.NewCSV(),
+		"pdf": export.NewPDF(),
+	}
 }
 
 // newDocumentStorage choisit l'implémentation du port document.Storage selon
