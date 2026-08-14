@@ -1,0 +1,77 @@
+{{- /*
+champs_etape rend les champs du formulaire d'étape, partagés entre la création
+(planning_index.gohtml) et la modification (planning_etape_modifier.gohtml).
+
+Le fichier vit dans templates/partials/ parce que parsePages compile chaque
+page avec le layout ET les partiels : un define posé dans une page ne serait
+visible que d'elle. Le contexte est la vue complète ($), et le formulaire se
+lit dans .Data.EtapeForm — les deux pages rangent leur formulaire sous ce nom,
+c'est le pivot du partage.
+
+Sur une étape démarrée, les prérequis sont grisés (le domaine les refuse de
+toute façon : ils ont joué leur rôle de garde au démarrage) et les valeurs
+actuelles repartent en champs cachés — une case désactivée n'est pas soumise,
+et la soumission doit dire « inchangé ».
+*/ -}}
+{{ define "champs_etape" }}
+{{- $f := .Data.EtapeForm }}
+<div class="champ">
+    <label for="etape-nom">{{ .T "planning.champ.nom" }}</label>
+    <input id="etape-nom" name="nom" type="text" value="{{ $f.Nom }}" maxlength="120" required>
+    <p class="note">{{ .T "planning.champ.nom_aide" }}</p>
+</div>
+
+<div class="champ">
+    <label for="etape-description">{{ .T "devis.champ.description" }}</label>
+    <textarea id="etape-description" name="description" rows="2">{{ $f.Description }}</textarea>
+</div>
+
+<div class="champ">
+    <label for="etape-debut">{{ .T "planning.champ.debut_prevu" }}</label>
+    <input id="etape-debut" name="debut_prevu" type="date" value="{{ $f.DebutPrevu }}" required>
+</div>
+
+<div class="champ">
+    <label for="etape-fin">{{ .T "planning.champ.fin_prevue" }}</label>
+    <input id="etape-fin" name="fin_prevue" type="date" value="{{ $f.FinPrevue }}" required>
+</div>
+
+<div class="champ">
+    <label for="etape-devis">{{ .T "finance.champ.devis" }}</label>
+    <select id="etape-devis" name="devis_id">
+        <option value="">{{ .T "planning.champ.sans_devis" }}</option>
+        {{- range $f.Devis }}
+        <option value="{{ .ID }}" {{ if .Selected }}selected{{ end }}>{{ .Label }}</option>
+        {{- end }}
+    </select>
+    <p class="note">{{ .T "planning.champ.devis_aide" }}</p>
+</div>
+
+{{- if $f.Dependances }}
+<fieldset class="champ">
+    <legend>{{ .T "planning.champ.dependances" }}</legend>
+    <p class="note">
+        {{- if $f.DependancesLocked }}{{ .T "planning.champ.dependances_verrouillees" }}
+        {{- else }}{{ .T "planning.champ.dependances_aide" }}{{ end -}}
+    </p>
+    {{- range $f.Dependances }}
+    <label class="case">
+        <input type="checkbox" name="dependances" value="{{ .ID }}"
+               {{ if .Checked }}checked{{ end }} {{ if $f.DependancesLocked }}disabled{{ end }}>
+        {{ .Label }}
+    </label>
+    {{- end }}
+    {{- if $f.DependancesLocked }}
+    {{- range $f.Dependances }}
+    {{- if .Checked }}
+    <input type="hidden" name="dependances" value="{{ .ID }}">
+    {{- end }}
+    {{- end }}
+    {{- end }}
+</fieldset>
+{{- end }}
+
+{{- if $f.ModifieLe }}
+<input type="hidden" name="modifie_le" value="{{ $f.ModifieLe }}">
+{{- end }}
+{{ end }}

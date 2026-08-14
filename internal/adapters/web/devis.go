@@ -90,6 +90,14 @@ var avisCatalog = map[string]struct {
 	avisAssuranceEnvoyee:    {messageID: "finance.avis.assurance_envoyee"},
 	avisAssuranceRemboursee: {messageID: "finance.avis.assurance_remboursee"},
 	avisPieceModifiee:       {messageID: "finance.avis.piece_modifiee", erreur: true},
+	// Les avis du domaine planning (codes déclarés dans planning.go).
+	avisEtapeCreee:      {messageID: "planning.avis.etape_creee"},
+	avisEtapeModifiee:   {messageID: "planning.avis.etape_modifiee"},
+	avisEtapeDemarree:   {messageID: "planning.avis.etape_demarree"},
+	avisEtapeTerminee:   {messageID: "planning.avis.etape_terminee"},
+	avisJalonCree:       {messageID: "planning.avis.jalon_cree"},
+	avisJalonAtteint:    {messageID: "planning.avis.jalon_atteint"},
+	avisPlanningModifie: {messageID: "planning.avis.planning_modifie", erreur: true},
 }
 
 // devisErrorMessages traduit les erreurs métier en messages du catalogue.

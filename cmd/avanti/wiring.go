@@ -16,6 +16,7 @@ import (
 	"github.com/Romain-Badino/Avanti/internal/document"
 	"github.com/Romain-Badino/Avanti/internal/finance"
 	"github.com/Romain-Badino/Avanti/internal/identity"
+	"github.com/Romain-Badino/Avanti/internal/planning"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/config"
 	"github.com/Romain-Badino/Avanti/internal/platform/db"
@@ -53,6 +54,10 @@ type instance struct {
 	// financeService porte les cas d'usage de l'argent du chantier, montés sur
 	// leur dépôt PostgreSQL.
 	financeService *finance.Service
+
+	// planningService porte les cas d'usage de l'ordonnancement du chantier,
+	// montés sur leur dépôt PostgreSQL.
+	planningService *planning.Service
 
 	// oauthStore est le magasin du serveur d'autorisation. Il vit dans la famille
 	// postgres et sera injecté dans l'adapter web : c'est le point où les deux
@@ -127,6 +132,12 @@ func openInstance(ctx context.Context, stderr io.Writer) (*instance, func(), err
 		return nil, func() {}, err
 	}
 
+	planningService, err := newPlanningService(pool)
+	if err != nil {
+		pool.Close()
+		return nil, func() {}, err
+	}
+
 	return &instance{
 		cfg:              cfg,
 		logger:           logger,
@@ -136,6 +147,7 @@ func openInstance(ctx context.Context, stderr io.Writer) (*instance, func(), err
 		devisService:     devisService,
 		documentsService: documentsService,
 		financeService:   financeService,
+		planningService:  planningService,
 		oauthStore:       oauthStore,
 	}, pool.Close, nil
 }
@@ -179,6 +191,16 @@ func newFinanceService(pool *pgxpool.Pool) (*finance.Service, error) {
 	}
 
 	return finance.NewService(finance.ServiceOptions{Repo: repo})
+}
+
+// newPlanningService branche le domaine du planning sur son dépôt PostgreSQL.
+func newPlanningService(pool *pgxpool.Pool) (*planning.Service, error) {
+	repo, err := postgres.NewPlanningRepo(pool)
+	if err != nil {
+		return nil, err
+	}
+
+	return planning.NewService(planning.ServiceOptions{Repo: repo})
 }
 
 // newExports construit les formats du dossier d'assurance, indexés par le

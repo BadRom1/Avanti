@@ -20,6 +20,7 @@ import (
 	"github.com/Romain-Badino/Avanti/internal/document"
 	"github.com/Romain-Badino/Avanti/internal/finance"
 	"github.com/Romain-Badino/Avanti/internal/identity"
+	"github.com/Romain-Badino/Avanti/internal/planning"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/server"
 )
@@ -28,7 +29,7 @@ import (
 // binaire se suffit à lui-même : pas de répertoire à déployer à côté, pas de
 // chaîne de build front, pas de CDN à joindre à l'exécution.
 //
-//go:embed templates/layout.gohtml templates/pages/*.gohtml
+//go:embed templates/layout.gohtml templates/pages/*.gohtml templates/partials/*.gohtml
 var templatesFS embed.FS
 
 //go:embed static
@@ -80,6 +81,9 @@ type Options struct {
 	Documents *document.Service
 	// Finance porte les cas d'usage de l'argent du chantier. Obligatoire.
 	Finance *finance.Service
+	// Planning porte les cas d'usage de l'ordonnancement du chantier.
+	// Obligatoire.
+	Planning *planning.Service
 	// Exports sont les formats du dossier d'assurance, indexés par le segment
 	// d'URL qui les désigne (« csv », « pdf »). Obligatoire, au moins un
 	// format.
@@ -111,6 +115,7 @@ type Handler struct {
 	devis     *devis.Service
 	documents *document.Service
 	finance   *finance.Service
+	planning  *planning.Service
 	exports   map[string]finance.ExportFormat
 	// baseHost est l'hôte de l'URL publique : la seule donnée d'instance dont
 	// un document exporté dispose pour se nommer — deux chantiers, deux
@@ -157,6 +162,7 @@ func New(opts Options) (*Handler, error) {
 		devis:     opts.Devis,
 		documents: opts.Documents,
 		finance:   opts.Finance,
+		planning:  opts.Planning,
 		exports:   opts.Exports,
 		baseHost:  opts.BaseURL.Host,
 		clock:     opts.Clock,
@@ -170,6 +176,7 @@ func New(opts Options) (*Handler, error) {
 	h.mountDevis()
 	h.mountDocuments()
 	h.mountFinance()
+	h.mountPlanning()
 	h.mountOAuth()
 	h.mux.HandleFunc("/", h.handleNotFound)
 
@@ -202,6 +209,8 @@ func checkOptions(opts Options) error {
 		return errors.New("web : service des documents manquant")
 	case opts.Finance == nil:
 		return errors.New("web : service des finances manquant")
+	case opts.Planning == nil:
+		return errors.New("web : service du planning manquant")
 	case len(opts.Exports) == 0:
 		return errors.New("web : aucun format d'export du dossier d'assurance")
 	default:
@@ -312,6 +321,9 @@ const (
 	pageDocumentsIndex = "documents_index.gohtml"
 
 	pageFinanceIndex = "finance_index.gohtml"
+
+	pagePlanningIndex         = "planning_index.gohtml"
+	pagePlanningEtapeModifier = "planning_etape_modifier.gohtml"
 )
 
 // render écrit la page demandée, et bascule sur la page d'erreur si le rendu
@@ -372,8 +384,12 @@ func (h *Handler) fail(r *http.Request, err error) {
 }
 
 // parsePages compile un jeu de gabarits par page : chacun combine le gabarit
-// commun et la page elle-même. Les compiler ensemble ferait entrer en collision
-// les blocs « content » que chaque page définit.
+// commun, les partiels partagés et la page elle-même. Les pages ne se
+// compilent pas ensemble — leurs blocs « content » entreraient en collision —
+// mais les partiels, eux, sont vus de toutes : c'est là que vit un define
+// utilisé par plusieurs pages, et lui seul doit y vivre (deux pages qui
+// définiraient le même bloc ne se le disputeraient jamais, chacune étant
+// compilée à part — le doublon passerait inaperçu).
 func parsePages() (map[string]*template.Template, error) {
 	files, err := fs.Glob(templatesFS, "templates/pages/*.gohtml")
 	if err != nil {
@@ -385,7 +401,8 @@ func parsePages() (map[string]*template.Template, error) {
 
 	pages := make(map[string]*template.Template, len(files))
 	for _, file := range files {
-		tmpl, err := template.New("layout.gohtml").ParseFS(templatesFS, "templates/layout.gohtml", file)
+		tmpl, err := template.New("layout.gohtml").ParseFS(templatesFS,
+			"templates/layout.gohtml", "templates/partials/*.gohtml", file)
 		if err != nil {
 			return nil, fmt.Errorf("compilation du gabarit %s : %w", path.Base(file), err)
 		}

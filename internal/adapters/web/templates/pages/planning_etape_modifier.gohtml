@@ -1,0 +1,28 @@
+{{- /*
+La page de modification d'une étape : les champs du formulaire de création
+(le partiel « champs_etape », partagé via templates/partials/), pré-remplis,
+avec la garde optimiste — modifie_le, l'horodatage que la page connaissait,
+repart en champ caché, et une soumission croisée avec une autre modification
+est refusée au lieu de l'écraser.
+*/ -}}
+{{ define "title" }}{{ .T "planning.modifier.title" }}{{ end }}
+
+{{ define "content" }}
+{{- $f := .Data.EtapeForm }}
+<p class="fil"><a href="/planning">{{ .T "planning.modifier.retour" }}</a></p>
+
+<h1>{{ .T "planning.modifier.heading" "Nom" $f.Nom }}</h1>
+
+<section class="card">
+    {{- if $f.Error }}
+    <p class="avis avis--erreur" role="alert">{{ $f.Error }}</p>
+    {{- end }}
+
+    <form class="formulaire" method="post" action="{{ $f.Action }}">
+        {{ template "champs_etape" $ }}
+        <div class="actions">
+            <button class="button" type="submit">{{ .T "planning.modifier.soumettre" }}</button>
+        </div>
+    </form>
+</section>
+{{ end }}

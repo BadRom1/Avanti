@@ -1,0 +1,269 @@
+{{- /*
+La page unique du planning : les jalons d'abord — ce sont les échéances
+contractuelles qu'on vient surveiller —, puis le Gantt dérivé, les étapes
+prêtes à démarrer, la liste des étapes avec leurs actions, et les formulaires
+de création pour qui détient planning:write.
+
+Le Gantt est une table CSS à 60 colonnes de largeur égale (layout fixe) : les
+barres sont des cellules dont le colspan, calculé côté serveur depuis les
+millièmes du domaine, donne la proportion — aucun style inline (la CSP
+l'interdit), aucun JavaScript, aucun flottant. Une étape démarrée porte une
+seconde ligne fine avec sa barre réelle.
+
+Les actions (démarrer, terminer, atteindre) sont des formulaires POST pleins ;
+HTMX ne fait qu'épargner un rechargement. Chacune emporte modifie_le en champ
+caché : la garde optimiste qui refuse d'écraser ce qu'une autre personne vient
+de changer.
+*/ -}}
+{{ define "title" }}{{ .T "planning.index.title" }}{{ end }}
+
+{{ define "content" }}
+{{- $d := .Data }}
+{{- $peutEcrire := .Can "planning:write" }}
+<h1>{{ .T "planning.index.heading" }}</h1>
+<p class="lede">{{ .T "planning.index.intro" }}</p>
+
+{{- if $d.Avis.Message }}
+<p class="avis {{ if $d.Avis.Erreur }}avis--erreur{{ else }}avis--succes{{ end }}"
+   role="{{ if $d.Avis.Erreur }}alert{{ else }}status{{ end }}">{{ $d.Avis.Message }}</p>
+{{- end }}
+
+<section class="card card--large" aria-labelledby="titre-jalons">
+    <h2 id="titre-jalons">{{ .T "planning.jalons.heading" }}</h2>
+
+    {{- if not $d.Jalons }}
+    <p>{{ .T "planning.jalons.vide" }}</p>
+    {{- else }}
+    <div class="tableau-defilant">
+        <table class="tableau">
+            <caption class="sr-only">{{ .T "planning.jalons.legende" }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{ .T "planning.champ.jalon" }}</th>
+                    <th scope="col">{{ .T "planning.champ.date_prevue" }}</th>
+                    <th scope="col">{{ .T "devis.champ.statut" }}</th>
+                    {{- if $peutEcrire }}
+                    <th scope="col">{{ .T "finance.champ.actions" }}</th>
+                    {{- end }}
+                </tr>
+            </thead>
+            <tbody>
+                {{- range $d.Jalons }}
+                <tr>
+                    <th scope="row">{{ .Nom }}</th>
+                    <td>{{ .Date }}</td>
+                    <td>
+                        <span class="statut {{ if .Atteint }}statut--terminee{{ end }}">{{ .Statut }}</span>
+                        {{- if .AtteintLe }}<span class="devis__contact">{{ .AtteintLe }}</span>{{ end }}
+                        {{- if .EnRetard }}<span class="statut statut--retard">{{ .Retard }}</span>{{ end }}
+                    </td>
+                    {{- if $peutEcrire }}
+                    <td class="tableau__actions">
+                        {{- if .PeutAtteindre }}
+                        <form method="post" action="{{ .AtteindreURL }}"
+                              hx-post="{{ .AtteindreURL }}"
+                              hx-confirm="{{ $.T "planning.action.atteindre_confirmation" "Nom" .Nom }}">
+                            <input type="hidden" name="modifie_le" value="{{ .ModifieLe }}">
+                            <button class="button" type="submit">{{ $.T "planning.action.atteindre" }}</button>
+                        </form>
+                        {{- end }}
+                    </td>
+                    {{- end }}
+                </tr>
+                {{- end }}
+            </tbody>
+        </table>
+    </div>
+    {{- end }}
+</section>
+
+<section class="card card--large" aria-labelledby="titre-gantt">
+    <h2 id="titre-gantt">{{ .T "planning.gantt.heading" }}</h2>
+
+    {{- if not $d.Gantt.Present }}
+    <p>{{ .T "planning.gantt.vide" }}</p>
+    {{- else }}
+    <p class="note">{{ .T "planning.gantt.plage" "Du" $d.Gantt.Du "Au" $d.Gantt.Au }}</p>
+    <div class="tableau-defilant">
+        <table class="gantt">
+            <caption class="sr-only">{{ .T "planning.gantt.legende" }}</caption>
+            <colgroup>
+                <col class="gantt__col-libelle">
+                {{- range $d.Gantt.Cols }}
+                <col>
+                {{- end }}
+            </colgroup>
+            <thead>
+                <tr>
+                    <th scope="col" class="gantt__libelle">{{ .T "planning.champ.etape" }}</th>
+                    {{- range $d.Gantt.Axis }}
+                    <th scope="col" colspan="{{ .Span }}" class="gantt__axe">{{ .Label }}</th>
+                    {{- end }}
+                </tr>
+            </thead>
+            <tbody>
+                {{- range $d.Gantt.Lignes }}
+                <tr class="gantt__ligne">
+                    <th scope="row" class="gantt__libelle">
+                        {{ .Nom }}
+                        <span class="statut {{ .StatutClass }}">{{ .Statut }}</span>
+                        {{- if .Retard }}<span class="statut statut--retard">{{ .Retard }}</span>{{ end }}
+                    </th>
+                    {{- range .Cells }}
+                    <td colspan="{{ .Span }}" class="{{ .Class }}"></td>
+                    {{- end }}
+                </tr>
+                {{- if .Reelle }}
+                <tr class="gantt__ligne gantt__ligne--reelle">
+                    <th scope="row" class="gantt__libelle gantt__libelle--reel">{{ $.T "planning.gantt.reel" }}</th>
+                    {{- range .ReelleCells }}
+                    <td colspan="{{ .Span }}" class="{{ .Class }}"></td>
+                    {{- end }}
+                </tr>
+                {{- end }}
+                {{- end }}
+                {{- range $d.Gantt.Jalons }}
+                <tr class="gantt__ligne gantt__ligne--jalon">
+                    <th scope="row" class="gantt__libelle">
+                        ◆ {{ .Nom }}
+                        <span class="devis__contact">{{ .Date }}</span>
+                        {{- if .Retard }}<span class="statut statut--retard">{{ .Retard }}</span>{{ end }}
+                    </th>
+                    {{- range .Cells }}
+                    <td colspan="{{ .Span }}" class="{{ .Class }}"></td>
+                    {{- end }}
+                </tr>
+                {{- end }}
+            </tbody>
+        </table>
+    </div>
+    {{- end }}
+</section>
+
+<section class="card" aria-labelledby="titre-pretes">
+    <h2 id="titre-pretes">{{ .T "planning.pretes.heading" }}</h2>
+    <p class="note">{{ .T "planning.pretes.intro" }}</p>
+
+    {{- if not $d.Pretes }}
+    <p>{{ .T "planning.pretes.vide" }}</p>
+    {{- else }}
+    <ul class="checklist">
+        {{- range $d.Pretes }}
+        <li>{{ .Nom }} <span class="devis__contact">{{ .Dates }}</span></li>
+        {{- end }}
+    </ul>
+    {{- end }}
+</section>
+
+<section class="card card--large" aria-labelledby="titre-etapes">
+    <h2 id="titre-etapes">{{ .T "planning.etapes.heading" }}</h2>
+
+    {{- if not $d.Etapes }}
+    <p>{{ .T "planning.etapes.vide" }}</p>
+    {{- else }}
+    <div class="tableau-defilant">
+        <table class="tableau">
+            <caption class="sr-only">{{ .T "planning.etapes.legende" }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{ .T "planning.champ.etape" }}</th>
+                    <th scope="col">{{ .T "finance.champ.devis" }}</th>
+                    <th scope="col">{{ .T "planning.champ.prevu" }}</th>
+                    <th scope="col">{{ .T "planning.champ.reel" }}</th>
+                    <th scope="col">{{ .T "devis.champ.statut" }}</th>
+                    {{- if $peutEcrire }}
+                    <th scope="col">{{ .T "finance.champ.actions" }}</th>
+                    {{- end }}
+                </tr>
+            </thead>
+            <tbody>
+                {{- range $d.Etapes }}
+                <tr>
+                    <th scope="row">
+                        <span class="devis__entreprise">{{ .Nom }}</span>
+                        {{- if .Description }}<span class="devis__notes">{{ .Description }}</span>{{ end }}
+                    </th>
+                    <td>
+                        {{- if .Devis }}{{ .Devis }}
+                        {{- else }}<span class="devis__vide">{{ $.T "planning.champ.sans_devis" }}</span>{{ end -}}
+                    </td>
+                    <td>{{ .DebutPrevu }} → {{ .FinPrevue }}</td>
+                    <td>
+                        {{- if .DebutReel }}{{ .DebutReel }}{{ if .FinReelle }} → {{ .FinReelle }}{{ end }}
+                        {{- else }}<span class="devis__vide">—</span>{{ end -}}
+                    </td>
+                    <td>
+                        <span class="statut {{ .StatutClass }}">{{ .Statut }}</span>
+                        {{- if .EnRetard }}<span class="statut statut--retard">{{ .Retard }}</span>{{ end }}
+                        {{- if .Prete }}<span class="statut statut--prete">{{ $.T "planning.statut.prete" }}</span>{{ end }}
+                    </td>
+                    {{- if $peutEcrire }}
+                    <td class="tableau__actions">
+                        {{- if .PeutDemarrer }}
+                        <form method="post" action="{{ .DemarrerURL }}"
+                              hx-post="{{ .DemarrerURL }}"
+                              hx-confirm="{{ $.T "planning.action.demarrer_confirmation" "Nom" .Nom }}">
+                            <input type="hidden" name="modifie_le" value="{{ .ModifieLe }}">
+                            <button class="button" type="submit">{{ $.T "planning.action.demarrer" }}</button>
+                        </form>
+                        {{- end }}
+                        {{- if .PeutTerminer }}
+                        <form method="post" action="{{ .TerminerURL }}"
+                              hx-post="{{ .TerminerURL }}"
+                              hx-confirm="{{ $.T "planning.action.terminer_confirmation" "Nom" .Nom }}">
+                            <input type="hidden" name="modifie_le" value="{{ .ModifieLe }}">
+                            <button class="button" type="submit">{{ $.T "planning.action.terminer" }}</button>
+                        </form>
+                        {{- end }}
+                        <a class="button button--discret" href="{{ .ModifierURL }}">{{ $.T "planning.action.modifier" }}</a>
+                    </td>
+                    {{- end }}
+                </tr>
+                {{- end }}
+            </tbody>
+        </table>
+    </div>
+    {{- end }}
+</section>
+
+{{- if $peutEcrire }}
+<section class="card" aria-labelledby="titre-nouvelle-etape">
+    <h2 id="titre-nouvelle-etape">{{ .T "planning.etapes.nouvelle" }}</h2>
+
+    {{- if $d.EtapeForm.Error }}
+    <p class="avis avis--erreur" role="alert">{{ $d.EtapeForm.Error }}</p>
+    {{- end }}
+
+    <form class="formulaire" method="post" action="{{ $d.EtapeForm.Action }}">
+        {{ template "champs_etape" $ }}
+        <div class="actions">
+            <button class="button" type="submit">{{ .T "planning.etapes.soumettre" }}</button>
+        </div>
+    </form>
+</section>
+
+<section class="card" aria-labelledby="titre-nouveau-jalon">
+    <h2 id="titre-nouveau-jalon">{{ .T "planning.jalons.nouveau" }}</h2>
+
+    {{- if $d.JalonForm.Error }}
+    <p class="avis avis--erreur" role="alert">{{ $d.JalonForm.Error }}</p>
+    {{- end }}
+
+    <form class="formulaire" method="post" action="{{ $d.JalonForm.Action }}">
+        <div class="champ">
+            <label for="jalon-nom">{{ .T "planning.champ.jalon" }}</label>
+            <input id="jalon-nom" name="nom" type="text" value="{{ $d.JalonForm.Nom }}" maxlength="120" required>
+        </div>
+
+        <div class="champ">
+            <label for="jalon-date">{{ .T "planning.champ.date_prevue" }}</label>
+            <input id="jalon-date" name="date_prevue" type="date" value="{{ $d.JalonForm.Date }}" required>
+        </div>
+
+        <div class="actions">
+            <button class="button" type="submit">{{ .T "planning.jalons.soumettre" }}</button>
+        </div>
+    </form>
+</section>
+{{- end }}
+{{ end }}

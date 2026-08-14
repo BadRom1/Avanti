@@ -117,6 +117,8 @@ linters:
         - davantage
         - demande
         - demandes
+        - existantes
+        - portait
         - distincte
         - enveloppe
         - enveloppes
