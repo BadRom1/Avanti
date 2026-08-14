@@ -33,21 +33,17 @@ Le rituel de travail par lot est décrit dans `CLAUDE.md` ; l'architecture dans
   téléversement (MIME sniffé, allow-list stricte, 25 Mio max), listing,
   téléchargement authentifié, pièces rattachées sur les pages devis.
 
+- **Lot 7 — Domaine Finance** : entités `Facture` et `Acompte` (centimes
+  entiers, `devisID` en référence faible optionnelle, suivi assurance à
+  transitions irréversibles, garde optimiste sur les mises à jour), invariant
+  « cumul des acomptes ≤ montant engagé » tenu sous verrou consultatif en base
+  (montant engagé passé en valeur par l'adapter — R1/R2), synthèse par devis
+  retenu (engagé/facturé/payé/remboursé/reste) + hors devis + total chantier,
+  export assurance CSV (BOM, cellules neutralisées) et PDF via le port
+  `finance.ExportFormat` (second point d'extension plugin), justificatifs de
+  facture rattachés et listés dans l'export, scopes finance:read/write.
+
 ## À faire
-
-### Lot 7 — Domaine Finance
-
-- Entités : `Facture` (entreprise, montant en centimes, date, statut
-  payée/impayée), `Acompte`/`Paiement` (montant, date, moyen), chacune avec un
-  statut « envoyé à l'assurance » et un remboursement suivi.
-- `devisID` optionnel en référence FAIBLE (string) — absent = dépense hors
-  devis (achat direct, auto-construction).
-- Invariant central : le cumul des acomptes ne dépasse pas le montant engagé.
-- Vue de synthèse par devis retenu : engagé vs facturé vs payé vs remboursé
-  assurance ; total chantier.
-- Export assurance PDF/CSV via un port `ExportFormat` (second point d'extension
-  plugin) — l'export liste les pièces (documents) associées.
-- Scopes finance:read/write (les collaborateurs n'y ont pas accès).
 
 ### Lot 8 — Domaine Planning
 

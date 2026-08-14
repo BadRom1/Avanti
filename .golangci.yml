@@ -94,6 +94,9 @@ linters:
         - etape
         - jalon
         - artisan
+        # « cheque » est la valeur française du moyen de paiement
+        # (finance.MoyenCheque), stockée en base et visible telle quelle.
+        - cheque
         # Français courant homographe de fautes anglaises.
         - absolue
         - accumule
@@ -122,6 +125,7 @@ linters:
         - inventer
         - inventee
         - manipule
+        - neutralisation
         - normalisation
         - partiel
         - partielle
@@ -515,6 +519,16 @@ linters:
             - github.com/Romain-Badino/Avanti/internal/identity
             - github.com/Romain-Badino/Avanti/internal/planning
             - github.com/Romain-Badino/Avanti/internal/platform
+            # fpdf : le générateur PDF du dossier d'assurance, implémentation du
+            # port finance.ExportFormat (second point d'extension officiel,
+            # docs/ARCHITECTURE.md §3). L'adresse codeberg.org est l'adresse
+            # canonique actuelle du module — l'ancien github.com/go-pdf/fpdf
+            # s'est arrêté à v0.9.0, le développement continue sur Codeberg. En
+            # Go pur, sans dépendance système ni réseau : il écrit des octets
+            # dans un io.Writer, rien d'autre. Ici seulement : le vocabulaire
+            # PDF n'a rien à faire ni dans le domaine (R1), ni dans une autre
+            # famille d'adapters (R4).
+            - codeberg.org/go-pdf/fpdf
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
               desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"

@@ -239,13 +239,18 @@ func startAvanti(t *testing.T) *avantiInstance {
 		t.Fatalf("création du compte de test : %v", err)
 	}
 
-	// Les domaines devis et document sont montés comme en production :
-	// l'adapter web les exige, et le bout-en-bout n'a d'intérêt que s'il
-	// assemble les mêmes pièces. Seul le stockage diffère — un répertoire
-	// jetable du test plutôt que celui de la configuration.
+	// Les domaines devis, document et finance sont montés comme en
+	// production : l'adapter web les exige, et le bout-en-bout n'a d'intérêt
+	// que s'il assemble les mêmes pièces. Seul le stockage diffère — un
+	// répertoire jetable du test plutôt que celui de la configuration.
 	devisService, err := newDevisService(pool)
 	if err != nil {
 		t.Fatalf("newDevisService() échoué : %v", err)
+	}
+
+	financeService, err := newFinanceService(pool)
+	if err != nil {
+		t.Fatalf("newFinanceService() échoué : %v", err)
 	}
 
 	documentRepo, err := postgres.NewDocumentRepo(pool)
@@ -288,6 +293,8 @@ func startAvanti(t *testing.T) *avantiInstance {
 		OAuthSecret:  []byte(e2eOAuthSecret),
 		Devis:        devisService,
 		Documents:    documentsService,
+		Finance:      financeService,
+		Exports:      newExports(),
 	})
 	if err != nil {
 		t.Fatalf("web.New() échoué : %v", err)

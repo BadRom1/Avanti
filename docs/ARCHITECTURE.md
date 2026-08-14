@@ -570,11 +570,12 @@ bloquer une fusion.
 
 ## 8. Ce que ce document n'engage pas encore
 
-Le socle applicatif et les domaines `identity`, `devis` et `document` existent —
-`internal/platform`, `internal/identity`, `internal/devis`, `internal/document`,
-`adapters/postgres`, `adapters/storage`, `adapters/web` et `cmd/avanti` sont
-écrits et testés — mais **`planning` et `finance` ne contiennent toujours que
-leur `doc.go`**. Les règles
+Le socle applicatif et les domaines `identity`, `devis`, `document` et
+`finance` existent — `internal/platform`, `internal/identity`,
+`internal/devis`, `internal/document`, `internal/finance`,
+`adapters/postgres`, `adapters/storage`, `adapters/export`, `adapters/web` et
+`cmd/avanti` sont écrits et testés — mais **`planning` ne contient toujours
+que son `doc.go`**. Les règles
 ci-dessus ont donc été écrites avant le code qu'elles gouvernent, et c'est
 délibéré : le harnais qui les applique était vert avant la première ligne de
 socle, ce qui fait qu'aucun code n'a pu les enfreindre par accident en chemin.

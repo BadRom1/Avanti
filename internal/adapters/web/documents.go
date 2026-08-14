@@ -11,6 +11,7 @@ import (
 
 	"github.com/Romain-Badino/Avanti/internal/devis"
 	"github.com/Romain-Badino/Avanti/internal/document"
+	"github.com/Romain-Badino/Avanti/internal/finance"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 )
 
@@ -63,6 +64,10 @@ var (
 	// pas. La vérification est celle de l'adapter web — c'est lui qui assemble
 	// les vues transverses, le domaine document ne connaît pas les devis (R2).
 	errCibleDevisInconnue = errors.New("web : devis de rattachement inconnu")
+	// errCibleFactureInconnue est le pendant pour une facture : le domaine
+	// document ne connaît pas plus le domaine finance (R2), c'est ici que
+	// l'existence de la cible se vérifie.
+	errCibleFactureInconnue = errors.New("web : facture de rattachement inconnue")
 )
 
 // documentErrorMessages traduit les erreurs métier en messages du catalogue.
@@ -85,6 +90,7 @@ var documentErrorMessages = []struct {
 	{document.ErrInvalidTarget, "document.erreur.cible_invalide"},
 	{errFichierManquant, "document.erreur.fichier_manquant"},
 	{errCibleDevisInconnue, "document.erreur.cible_devis_inconnue"},
+	{errCibleFactureInconnue, "document.erreur.cible_facture_inconnue"},
 }
 
 // documentMessageID rend l'identifiant de message correspondant à une erreur,
@@ -306,6 +312,9 @@ func (h *Handler) handleDocumentUpload(w http.ResponseWriter, r *http.Request) {
 
 	proposition, err := h.resolveCibleDevis(r, target)
 	if err == nil {
+		err = h.resolveCibleFacture(r, target)
+	}
+	if err == nil {
 		err = h.uploadFromRequest(r, target)
 	}
 	if err != nil {
@@ -313,11 +322,15 @@ func (h *Handler) handleDocumentUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Le dépôt rattaché à un devis ramène à la comparaison d'où il est parti ;
-	// le dépôt libre, à la liste des pièces.
+	// Le dépôt rattaché à un devis ramène à la comparaison d'où il est parti,
+	// celui rattaché à une facture à la page des finances ; le dépôt libre, à
+	// la liste des pièces.
 	destination := documentsPath
-	if proposition != nil {
+	switch {
+	case proposition != nil:
 		destination = demandePath(proposition.DemandeID)
+	case target.Type == document.TargetFacture:
+		destination = financesPath
 	}
 	h.redirectAfterPost(w, r, destination+"?"+paramAvis+"="+avisDocumentAjoute)
 }
@@ -340,6 +353,26 @@ func (h *Handler) resolveCibleDevis(r *http.Request, target document.Target) (*d
 	}
 
 	return &proposition, nil
+}
+
+// resolveCibleFacture vérifie, avant le dépôt, qu'un rattachement à une
+// facture désigne une facture qui existe — le miroir de [resolveCibleDevis]
+// pour le domaine finance. Sans rattachement de facture, rend nil sans
+// erreur.
+func (h *Handler) resolveCibleFacture(r *http.Request, target document.Target) error {
+	if target.Type != document.TargetFacture {
+		return nil
+	}
+
+	_, err := h.finance.Facture(r.Context(), finance.ID(target.ID))
+	if errors.Is(err, finance.ErrUnknownFacture) {
+		return fmt.Errorf("%w : %s", errCibleFactureInconnue, target.ID)
+	}
+	if err != nil {
+		return fmt.Errorf("résolution de la facture de rattachement : %w", err)
+	}
+
+	return nil
 }
 
 // uploadFromRequest lit la partie fichier, constate son type et sa taille, et
