@@ -4,17 +4,26 @@ Avanti — pilotage de la reconstruction d'une maison : devis, planning, finance
 
 ## Statut
 
-**En construction.** Le socle applicatif tourne : l'application démarre, lit sa
-configuration, applique ses migrations, sert une interface web et répond à ses
-sondes d'exploitation. **Les comptes et les accès fonctionnent** : on crée un
-compte en ligne de commande, on se connecte, la session tient, et le menu s'ajuste
-aux droits du rôle. **Le serveur d'autorisation OAuth 2.1 est en place** : un
-agent peut déjà s'enregistrer, obtenir le consentement d'un propriétaire et
-recevoir un jeton, mais le serveur MCP qui consommera ce jeton arrive dans un lot
-ultérieur. Les quatre domaines métier — devis, planning, finances,
-documents — ne sont pas encore implémentés : le tableau de bord est un provisoire
-assumé. Rien n'est donc utilisable pour piloter un vrai chantier, mais la
-charpente est en place et vérifiée par la CI.
+**V1 fonctionnelle.** Tout ce qu'il faut pour piloter un chantier est en place
+et vérifié par la CI :
+
+- **les quatre domaines métier** — demandes de devis et comparaison des offres
+  (avec un seul devis retenu par consultation, garanti en base), planning en
+  étapes et jalons avec dépendances et Gantt dérivé, factures et acomptes en
+  centimes entiers avec suivi assurance et exports CSV/PDF, pièces du dossier
+  classées et rattachées à ce qu'elles justifient ;
+- **l'identité et les accès** : comptes en ligne de commande, rôles
+  `proprietaire` et `collaborateur`, scopes vérifiés route par route ;
+- **l'accès agent IA** : serveur MCP embarqué, protégé par le serveur
+  d'autorisation OAuth 2.1 embarqué lui aussi — un agent Claude se branche avec
+  la seule URL de l'instance et le consentement d'un propriétaire ;
+- **le packaging self-hosted** : Dockerfile, compose de production exemple, et
+  [docs/INSTALLATION.md](docs/INSTALLATION.md) pour le pas à pas complet.
+
+Une règle traverse le tout : **aucun envoi automatique**. L'application prépare
+le dossier d'assurance, l'agent IA aussi ; la transmission reste un geste
+humain. Les ajustements se feront à l'usage — l'état exact et les décisions
+encore ouvertes sont dans [docs/FEUILLE-DE-ROUTE.md](docs/FEUILLE-DE-ROUTE.md).
 
 ## Stack
 
@@ -39,6 +48,10 @@ choix et leurs motifs sont détaillés dans [docs/ARCHITECTURE.md](docs/ARCHITEC
   place dans `./bin`, à des versions épinglées.
 
 ## Démarrage rapide
+
+Le pas à pas ci-dessous est celui d'un poste de **développement**. Pour
+déployer une instance réelle — Docker, reverse proxy, comptes, sauvegardes,
+agent Claude — suivre [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ```sh
 git clone https://github.com/Romain-Badino/Avanti.git
@@ -155,15 +168,27 @@ actions que le compte a signées continuent de le désigner.
 
 ## Connecter un agent IA (MCP)
 
-**Section provisoire.** Le serveur MCP — les outils qu'un agent appellera — arrive
-dans un lot ultérieur. Ce qui existe déjà, et qui se configure dès maintenant,
-c'est le serveur d'autorisation OAuth 2.1 qui le protégera.
+Le serveur MCP est servi sur `https://votre-instance/mcp`, et tout le reste se
+découvre tout seul : l'agent lit le document de découverte, s'enregistre comme
+client OAuth (enregistrement dynamique), et un propriétaire consent dans son
+navigateur. Il n'y a **que l'URL à donner** :
+
+```sh
+claude mcp add --transport http avanti https://votre-instance/mcp
+```
+
+Sur claude.ai, la même URL s'ajoute en connecteur personnalisé. Le pas à pas
+est dans [docs/INSTALLATION.md](docs/INSTALLATION.md), section « Brancher
+Claude ».
 
 Le modèle tient en une phrase : **chaque agent passe par OAuth avec le compte de
 son utilisateur**, jamais avec un compte machine ni une clé partagée. Un agent ne
 peut donc rien faire de plus que la personne qui l'a autorisé, et l'autorisation
 se retire sans toucher au compte. L'accès agent demande le scope `mcp`, que seul
-le rôle `proprietaire` porte : un `collaborateur` ne peut pas en ouvrir un.
+le rôle `proprietaire` porte : un `collaborateur` ne peut pas en ouvrir un. Les
+outils exposés consultent les quatre domaines et écrivent devis, factures,
+acomptes et étapes ; aucun n'envoie quoi que ce soit — la transmission à
+l'assurance reste un geste humain.
 
 Une seule chose est à préparer : **`AVANTI_OAUTH_SECRET`**, obligatoire au
 démarrage. C'est la clé HMAC qui signe les codes d'autorisation et les jetons.
@@ -179,13 +204,6 @@ publiée dans ce dépôt, la garder reviendrait à n'avoir aucune clé. En chang
 déconnecte tous les agents autorisés, qui devront l'être à nouveau — c'est aussi
 la façon de tout révoquer d'un coup.
 
-Le document de découverte, lui, est déjà servi : qu'il réponde est le signe que le
-serveur d'autorisation est correctement monté.
-
-```sh
-curl -s http://localhost:8080/.well-known/oauth-authorization-server
-```
-
 Le flux, ses garde-fous et les décisions de sécurité sont détaillés dans
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), section « OAuth 2.1 et l'accès
 agent ».
@@ -195,8 +213,15 @@ agent ».
 ```
 avanti serve      démarre le serveur HTTP (commande par défaut)
 avanti user       gère les comptes (« avanti user » pour le détail)
+avanti seed       remplit une instance vide de données d'essai (« avanti seed » pour le détail)
 avanti version    affiche l'identité du binaire (équivalent : avanti --version)
 ```
+
+`avanti seed demo --email vous@exemple.fr` crée un jeu de démonstration complet
+— consultations, devis retenu, factures, acomptes, étapes, jalons, pièces PDF —
+attribué à un compte existant. C'est un outil de découverte : il refuse de
+tourner quand `AVANTI_ENV` vaut `production`, et dès que la base contient la
+moindre donnée métier.
 
 ## Tests
 
@@ -240,8 +265,12 @@ internal/
     migrate/         Migrations SQL embarquées (goose)
     server/          Serveur HTTP, intergiciels, sondes, arrêt gracieux
 compose.yaml         PostgreSQL de développement (port hôte 5439)
+compose.production.yaml  Exemple commenté de déploiement (app + Postgres + volumes)
+Dockerfile           Image de production (build statique, distroless, non-root)
 .env.example         Configuration commentée, à copier en .env
 docs/ARCHITECTURE.md Règles de frontières et choix de stack
+docs/INSTALLATION.md Installation self-hosted pas à pas, agent Claude compris
+docs/FEUILLE-DE-ROUTE.md  Ce qui est fait, ce qui reste
 .githooks/           Hook pre-commit (activé par make hooks)
 ```
 

@@ -643,7 +643,15 @@ premier domaine métier, et valent pour la suite :
   sérialisent sur cette ligne, et il n'existe pas d'ordre où un devis atterrit
   sur une comparaison close.
 
-Restent à trancher au fil de l'implémentation : le format d'échange des vues
-transverses entre domaines et adapter web, la stratégie de pagination, et la
-politique de rétention des documents. Ces décisions seront ajoutées ici au
-moment où elles seront prises.
+Le format d'échange des vues transverses, resté ouvert un temps, s'est tranché
+de fait au fil des lots : **l'assemblage se fait dans l'adapter qui affiche, en
+valeurs** — l'adapter interroge chaque service de domaine, transporte les
+références faibles (identifiants, montants engagés) en simples valeurs, et
+compose le résultat. C'est l'application directe de R2 et R4, et aucun format
+intermédiaire partagé n'a été nécessaire.
+
+Restent réellement à trancher, à l'usage : la stratégie de **pagination** (les
+listes sont aujourd'hui servies entières, ce qui est correct à l'échelle d'un
+chantier) et la politique de **rétention des documents** (rien ne se supprime
+en V1, décision assumée dans le domaine document). Ces décisions seront
+ajoutées ici au moment où elles seront prises.

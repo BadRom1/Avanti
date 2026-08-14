@@ -1,0 +1,49 @@
+# Ce que le contexte de build Docker n'a pas à voir. Le miroir de .gitignore,
+# plus ce qui est versionné mais inutile à la compilation : l'image ne doit
+# recevoir que ce qui entre dans le binaire.
+
+# Outillage et binaires locaux
+bin/
+
+# Données locales du développement (uploads, dumps)
+data/
+*.sqlite
+*.sqlite3
+*.dump
+
+# Couverture et profils
+coverage.out
+coverage.html
+*.prof
+*.test
+
+# Résidus de validation manuelle
+*.pid
+
+# Configuration locale : des secrets n'entrent JAMAIS dans une image
+.env
+.env.*
+!.env.example
+
+# Rapports d'outils
+gosec-report.json
+gitleaks-report.json
+gremlins-report.json
+
+# Historique git et CI : inutiles au build, lourds dans le contexte
+.git/
+.github/
+.githooks/
+
+# Éditeurs et systèmes de fichiers
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Docker lui-même : changer le Dockerfile n'invalide pas le cache des couches
+Dockerfile
+compose.yaml
+compose.production.yaml
+.dockerignore

@@ -1,0 +1,101 @@
+# Compose de production EXEMPLE pour Avanti : l'application et son PostgreSQL.
+#
+# C'est un point de départ à adapter, pas un déploiement clé en main — le pas à
+# pas complet, reverse proxy et sauvegardes compris, est dans
+# docs/INSTALLATION.md. Il se distingue de compose.yaml, qui ne lève que la
+# base de développement.
+#
+#   docker compose -f compose.production.yaml up -d --build
+#   docker compose -f compose.production.yaml exec avanti /avanti user add \
+#     --email vous@exemple.fr --nom "Votre Nom" --role proprietaire --generate
+#
+# AUCUN secret n'est écrit ici : tout vient d'un fichier .env voisin (jamais
+# commité — .gitignore l'exclut), que la directive env_file charge dans les
+# deux services. Il doit définir au minimum :
+#
+#   AVANTI_ENV=production
+#   AVANTI_BASE_URL=https://avanti.exemple.fr        # l'URL publique réelle
+#   AVANTI_DATABASE_URL=postgres://avanti:<mot de passe>@postgres:5432/avanti?sslmode=disable
+#   AVANTI_OAUTH_SECRET=<openssl rand -base64 32>
+#   POSTGRES_PASSWORD=<le même mot de passe que dans AVANTI_DATABASE_URL>
+#
+# NE PAS reprendre AVANTI_LISTEN_ADDR=127.0.0.1:8080 de .env.example : dans un
+# conteneur, la boucle locale n'est pas joignable depuis l'hôte et le port
+# publié resterait muet. Laisser la variable absente — le défaut :8080 écoute
+# sur toutes les interfaces DU CONTENEUR, et c'est la ligne ports ci-dessous
+# qui restreint l'exposition à la boucle locale de l'hôte.
+#
+# En production, la configuration refuse les valeurs d'exemple `change-me` :
+# un secret oublié arrête le démarrage en le nommant, plutôt que de tourner
+# avec une clé publiée dans le dépôt. `postgres` dans l'URL de base de données
+# est le nom du service ci-dessous : les deux conteneurs partagent le réseau
+# du projet, et sslmode=disable est acceptable sur ce lien local — la base
+# n'est pas publiée hors de l'hôte.
+
+name: avanti
+
+services:
+  avanti:
+    # L'image se construit depuis le Dockerfile du dépôt. Pour épingler une
+    # image déjà construite et poussée sur un registre, remplacer `build` par
+    # `image: <registre>/avanti:<version>`.
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # 127.0.0.1 : l'application n'est PAS exposée directement sur le réseau.
+      # Un reverse proxy sur l'hôte (Caddy, nginx…) termine TLS devant et
+      # transmet l'en-tête Host — obligatoire en production, voir
+      # docs/INSTALLATION.md § Reverse proxy, y compris pour les réserves sur
+      # la limite anti-force-brute derrière un proxy (docs/ARCHITECTURE.md §4).
+      - "127.0.0.1:8080:8080"
+    volumes:
+      # Le contenu binaire des pièces du dossier (backend filesystem, le
+      # défaut). Le chemin est celui que l'image fixe dans
+      # AVANTI_DOCUMENTS_DIR ; le volume nommé survit aux reconstructions et
+      # fait partie du périmètre de sauvegarde au même titre que la base.
+      - avanti-documents:/data/documents
+    depends_on:
+      postgres:
+        # L'application ne démarre qu'une fois la base réellement prête : ses
+        # migrations s'appliquent au premier contact, autant qu'il réussisse.
+        condition: service_healthy
+    # Pas de healthcheck ici : l'image finale est distroless — ni shell ni
+    # curl pour exécuter une commande de sonde. La sonde HTTP est l'affaire de
+    # ce qui est devant : le reverse proxy ou l'orchestrateur interroge
+    # GET /healthz (le processus répond) ou /readyz (la base aussi), tous deux
+    # servis sans authentification.
+
+  postgres:
+    # Version majeure épinglée : une montée de version majeure de PostgreSQL
+    # se décide (dump puis restauration), elle n'arrive pas par un pull.
+    image: postgres:18-alpine
+    restart: unless-stopped
+    # POSTGRES_PASSWORD arrive par le même .env que le reste : un secret
+    # n'apparaît jamais dans ce fichier.
+    env_file: .env
+    environment:
+      POSTGRES_USER: avanti
+      POSTGRES_DB: avanti
+      # Encodage et collation figés, comme en développement : sans cela, la
+      # base hérite de la locale de l'image et le tri diffère d'un hôte à
+      # l'autre.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      # L'image PostgreSQL 18 place ses données dans /var/lib/postgresql/<major>
+      # et déclare le volume un cran au-dessus : c'est ce chemin-là qu'il faut
+      # monter pour que les données survivent à un `docker compose down`.
+      - avanti-pgdata:/var/lib/postgresql
+    # Aucun port publié : seule l'application, sur le réseau du projet, joint
+    # la base. Un psql d'administration passe par
+    # `docker compose -f compose.production.yaml exec postgres psql -U avanti`.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avanti -d avanti"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
+
+volumes:
+  avanti-pgdata:
+  avanti-documents:

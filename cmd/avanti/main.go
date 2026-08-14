@@ -31,6 +31,7 @@ const (
 	commandServe   = "serve"
 	commandVersion = "version"
 	commandUser    = "user"
+	commandSeed    = "seed"
 )
 
 func main() {
@@ -81,6 +82,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		// flags.Args()[1:] : ce qui suit « user » appartient à la sous-commande, et
 		// non au jeu de drapeaux global.
 		return runUser(ctx, flags.Args()[1:], stdout, stderr)
+	case commandSeed:
+		return runSeed(ctx, flags.Args()[1:], stdout, stderr)
 	default:
 		usage(stderr, flags)
 		return fmt.Errorf("commande inconnue : %q", command)
@@ -93,6 +96,7 @@ func usage(out io.Writer, flags *flag.FlagSet) {
 Commandes :
   serve     Démarre le serveur HTTP (commande par défaut)
   user      Gère les comptes (« avanti user » pour le détail)
+  seed      Remplit une instance vide de données d'essai (« avanti seed » pour le détail)
   version   Affiche l'identité du binaire puis quitte
 
 La configuration passe par des variables d'environnement préfixées AVANTI_ ;
