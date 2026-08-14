@@ -75,11 +75,11 @@ type artisanRow struct {
 
 // CreateDemande insère une demande de devis.
 func (d *DevisRepo) CreateDemande(ctx context.Context, demande devis.DemandeDevis) error {
-	id, err := devisUUID(demande.ID.String(), "demande de devis")
+	id, err := writeUUID(demande.ID.String(), "demande de devis")
 	if err != nil {
 		return err
 	}
-	auteur, err := devisUUID(demande.CreatedBy.String(), "acteur")
+	auteur, err := writeUUID(demande.CreatedBy.String(), "acteur")
 	if err != nil {
 		return err
 	}
@@ -143,15 +143,15 @@ func (d *DevisRepo) ListDemandes(ctx context.Context) ([]devis.DemandeDevis, err
 // soit-il, lirait un état que la rétention concurrente peut démentir entre la
 // lecture et l'écriture.
 func (d *DevisRepo) CreateDevis(ctx context.Context, proposition devis.Devis) error {
-	id, err := devisUUID(proposition.ID.String(), "devis")
+	id, err := writeUUID(proposition.ID.String(), "devis")
 	if err != nil {
 		return err
 	}
-	demandeID, err := devisUUID(proposition.DemandeID.String(), "demande de devis")
+	demandeID, err := writeUUID(proposition.DemandeID.String(), "demande de devis")
 	if err != nil {
 		return err
 	}
-	auteur, err := devisUUID(proposition.RecordedBy.String(), "acteur")
+	auteur, err := writeUUID(proposition.RecordedBy.String(), "acteur")
 	if err != nil {
 		return err
 	}
@@ -281,7 +281,7 @@ func (d *DevisRepo) Retain(ctx context.Context, devisID devis.ID, by devis.Acteu
 	if err != nil {
 		return err
 	}
-	decideur, err := devisUUID(by.String(), "acteur")
+	decideur, err := writeUUID(by.String(), "acteur")
 	if err != nil {
 		return err
 	}
@@ -362,7 +362,7 @@ func (d *DevisRepo) Reject(ctx context.Context, devisID devis.ID, by devis.Acteu
 	if err != nil {
 		return err
 	}
-	decideur, err := devisUUID(by.String(), "acteur")
+	decideur, err := writeUUID(by.String(), "acteur")
 	if err != nil {
 		return err
 	}
@@ -561,13 +561,14 @@ func fromInterval(interval pgtype.Interval) time.Duration {
 		time.Duration(interval.Months)*30*24*time.Hour
 }
 
-// devisUUID traduit un identifiant du domaine dans le type uuid de PostgreSQL.
+// writeUUID traduit un identifiant du domaine dans le type uuid de PostgreSQL,
+// sur le chemin des *écritures* — tous domaines confondus : devis, documents.
 //
 // La conversion est explicite plutôt que laissée à pgx : le pilote encode le
 // type uuid en binaire, où une chaîne Go n'a pas de plan d'encodage. La traduire
 // ici a un second mérite — un identifiant mal formé est refusé avant d'atteindre
 // le SQL, avec un message qui nomme la valeur fautive.
-func devisUUID(raw, label string) (pgtype.UUID, error) {
+func writeUUID(raw, label string) (pgtype.UUID, error) {
 	var uuid pgtype.UUID
 	if err := uuid.Scan(raw); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("identifiant de %s %q illisible comme uuid : %w", label, raw, err)
@@ -578,7 +579,7 @@ func devisUUID(raw, label string) (pgtype.UUID, error) {
 // lookupUUID traduit l'identifiant d'une *recherche* et rend l'erreur « inconnu »
 // du domaine quand il est illisible.
 //
-// La distinction avec [devisUUID] est délibérée. Sur une lecture ou une
+// La distinction avec [writeUUID] est délibérée. Sur une lecture ou une
 // décision, l'identifiant vient d'une URL : un identifiant malformé ne désigne
 // rien, exactement comme un identifiant bien formé qui n'existe pas, et
 // l'appelant doit pouvoir traiter les deux de la même façon — une page
@@ -599,7 +600,7 @@ func optionalUUID(acteur devis.ActeurID) pgtype.UUID {
 		return pgtype.UUID{}
 	}
 
-	uuid, err := devisUUID(acteur.String(), "acteur")
+	uuid, err := writeUUID(acteur.String(), "acteur")
 	if err != nil {
 		return pgtype.UUID{}
 	}

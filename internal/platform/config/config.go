@@ -47,6 +47,22 @@ const (
 	LogJSON LogFormat = "json"
 )
 
+// StorageBackend désigne l'implémentation du stockage des documents. C'est le
+// levier du modèle d'extension de docs/ARCHITECTURE.md §3 : le port du domaine
+// est le point d'extension, et cette variable dit à cmd/avanti laquelle de ses
+// implémentations brancher.
+type StorageBackend string
+
+// Les backends de stockage reconnus.
+const (
+	// StorageFilesystem écrit sur le disque local, dans DocumentsDir. C'est le
+	// choix par défaut, cohérent avec un déploiement self-hosted.
+	StorageFilesystem StorageBackend = "filesystem"
+	// StorageS3 écrit sur un objet compatible S3, décrit par les variables
+	// AVANTI_S3_*.
+	StorageS3 StorageBackend = "s3"
+)
+
 // Config rassemble tout ce qu'Avanti a besoin de savoir de son environnement
 // d'exécution. Une instance valide ne sort que de Load.
 type Config struct {
@@ -65,8 +81,30 @@ type Config struct {
 	// qui est en circulation, la divulguer permet d'en fabriquer.
 	OAuthSecret []byte
 	// DocumentsDir est le répertoire, toujours absolu, où l'adapter de stockage
-	// dépose le contenu binaire des pièces du dossier.
+	// dépose le contenu binaire des pièces du dossier. Il ne sert qu'au
+	// backend filesystem.
 	DocumentsDir string
+	// StorageBackend choisit l'implémentation du stockage des documents :
+	// filesystem (défaut) ou s3.
+	StorageBackend StorageBackend
+	// S3Endpoint est l'adresse du service S3, au format hôte ou hôte:port,
+	// sans schéma. Obligatoire quand StorageBackend vaut s3, ignorée sinon.
+	S3Endpoint string
+	// S3Bucket est le seau qui reçoit les contenus. Obligatoire avec s3.
+	S3Bucket string
+	// S3AccessKey et S3SecretKey sont les identifiants d'accès. Obligatoires
+	// avec s3. La clé secrète est un secret au même titre qu'OAuthSecret : elle
+	// ne sort jamais dans les journaux, et l'identifiant d'accès non plus, par
+	// prudence.
+	S3AccessKey string
+	S3SecretKey string
+	// S3Region est la région du seau. Facultative : la plupart des S3
+	// auto-hébergés n'en ont qu'une et l'ignorent.
+	S3Region string
+	// S3UseSSL commande le passage en HTTPS vers le service S3. Vrai par
+	// défaut : les documents sont confidentiels, les faire voyager en clair
+	// doit être un choix explicite de développement.
+	S3UseSSL bool
 	// LogLevel est le seuil de journalisation.
 	LogLevel slog.Level
 	// LogFormat est le rendu des journaux.
@@ -87,6 +125,13 @@ const (
 	keyDatabaseURL      = "DATABASE_URL"
 	keyOAuthSecret      = "OAUTH_SECRET" // #nosec G101 -- nom d'une variable d'environnement, pas un secret.
 	keyDocumentsDir     = "DOCUMENTS_DIR"
+	keyStorageBackend   = "STORAGE_BACKEND"
+	keyS3Endpoint       = "S3_ENDPOINT"
+	keyS3Bucket         = "S3_BUCKET"
+	keyS3AccessKey      = "S3_ACCESS_KEY" // #nosec G101 -- nom d'une variable d'environnement, pas un secret.
+	keyS3SecretKey      = "S3_SECRET_KEY" // #nosec G101 -- nom d'une variable d'environnement, pas un secret.
+	keyS3Region         = "S3_REGION"
+	keyS3UseSSL         = "S3_USE_SSL"
 	keyLogLevel         = "LOG_LEVEL"
 	keyLogFormat        = "LOG_FORMAT"
 	keyMigrateOnStart   = "MIGRATE_ON_START"
@@ -152,6 +197,7 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 		DBConnectTimeout: l.duration(keyDBConnectTimeout, defaultDBConnectTimeout),
 		ShutdownTimeout:  l.duration(keyShutdownTimeout, defaultShutdownTimeout),
 	}
+	l.storage(cfg)
 
 	if err := errors.Join(l.errs...); err != nil {
 		return nil, fmt.Errorf("configuration invalide :\n%w", err)
@@ -172,6 +218,16 @@ func (c *Config) LogValue() slog.Value {
 		// réduire de plusieurs ordres de grandeur le coût d'une recherche.
 		slog.Int("oauth_secret_length", len(c.OAuthSecret)),
 		slog.String("documents_dir", c.DocumentsDir),
+		slog.String("storage_backend", string(c.StorageBackend)),
+		// Du S3 ne sortent que l'adresse, le seau et le drapeau TLS — de quoi
+		// diagnostiquer un branchement. La clé secrète suit la règle
+		// d'OAuthSecret : jamais, pas même sa longueur ; et l'identifiant
+		// d'accès non plus — il est la moitié d'une paire d'identifiants, le
+		// journal n'a pas à en offrir la première moitié.
+		slog.String("s3_endpoint", c.S3Endpoint),
+		slog.String("s3_bucket", c.S3Bucket),
+		slog.String("s3_region", c.S3Region),
+		slog.Bool("s3_use_ssl", c.S3UseSSL),
 		slog.String("log_level", c.LogLevel.String()),
 		slog.String("log_format", string(c.LogFormat)),
 		slog.Bool("migrate_on_start", c.MigrateOnStart),
@@ -386,6 +442,50 @@ func (l *loader) oauthSecret(env Environment) []byte {
 	}
 
 	return []byte(value)
+}
+
+// storage lit le choix du backend de stockage des documents, puis les
+// variables S3 quand — et seulement quand — c'est lui qui est choisi. Les
+// variables S3 d'un backend filesystem sont ignorées, pas validées : une
+// ligne commentée à moitié dans un .env ne doit pas empêcher un démarrage qui
+// ne s'en sert pas.
+func (l *loader) storage(cfg *Config) {
+	cfg.StorageBackend = l.storageBackend()
+	if cfg.StorageBackend != StorageS3 {
+		return
+	}
+
+	cfg.S3Endpoint = l.requiredForS3(keyS3Endpoint)
+	cfg.S3Bucket = l.requiredForS3(keyS3Bucket)
+	cfg.S3AccessKey = l.requiredForS3(keyS3AccessKey)
+	cfg.S3SecretKey = l.requiredForS3(keyS3SecretKey)
+	cfg.S3Region = l.str(keyS3Region, "")
+	cfg.S3UseSSL = l.boolean(keyS3UseSSL, true)
+}
+
+// storageBackend valide le choix du backend.
+func (l *loader) storageBackend() StorageBackend {
+	value := l.str(keyStorageBackend, string(StorageFilesystem))
+	switch StorageBackend(strings.ToLower(value)) {
+	case StorageFilesystem:
+		return StorageFilesystem
+	case StorageS3:
+		return StorageS3
+	default:
+		l.reject(keyStorageBackend, fmt.Sprintf("valeur attendue : %s ou %s, reçu %q", StorageFilesystem, StorageS3, value))
+		return StorageFilesystem
+	}
+}
+
+// requiredForS3 exige une variable, avec un message qui dit pourquoi elle
+// l'est devenue : c'est le choix du backend qui la rend obligatoire, pas la
+// variable elle-même.
+func (l *loader) requiredForS3(key string) string {
+	value, ok := l.raw(key)
+	if !ok {
+		l.reject(key, fmt.Sprintf("variable obligatoire quand %s%s vaut %s", Prefix, keyStorageBackend, StorageS3))
+	}
+	return value
 }
 
 // documentsDir rend le répertoire de stockage toujours absolu, pour que le

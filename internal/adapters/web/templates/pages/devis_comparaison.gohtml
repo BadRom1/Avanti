@@ -129,6 +129,82 @@ côté serveur, seul le retour change (voir redirectAfterPost dans devis.go).
 </section>
 {{- end }}
 
+{{- /* Les pièces rattachées aux propositions : le PDF du devis, ses annexes.
+La section n'existe que s'il y a au moins une proposition à rattacher — une
+consultation sans devis n'a rien à porter ; la présence de propositions se lit
+sur $d.Devis, pas sur le formulaire, que le serveur ne construit que pour qui
+détient document:write. Le formulaire poste vers le domaine document
+(POST /documents) avec un cible_type figé à « devis » ; il n'apparaît que pour
+qui détient document:write, et la liste que pour document:read : les deux
+domaines gardent chacun leur porte. */}}
+{{- if $d.Devis }}
+{{- $peutLireDocuments := .Can "document:read" }}
+{{- $peutDeposer := .Can "document:write" }}
+{{- if or $peutLireDocuments $peutDeposer }}
+<section class="card" aria-labelledby="titre-pieces">
+    <h2 id="titre-pieces">{{ .T "devis.pieces.heading" }}</h2>
+
+    {{- if $peutLireDocuments }}
+    {{- if not $d.Pieces.Groupes }}
+    <p>{{ .T "devis.pieces.vide" }}</p>
+    {{- else }}
+    {{- range $d.Pieces.Groupes }}
+    <h3>{{ .Entreprise }}</h3>
+    <ul class="acces">
+        {{- range .Pieces }}
+        <li>
+            <span class="acces__domaine"><a href="{{ .URL }}" download>{{ .Nom }}</a></span>
+            <span class="acces__droit">{{ .Categorie }} · {{ .Taille }}</span>
+        </li>
+        {{- end }}
+    </ul>
+    {{- end }}
+    {{- end }}
+    {{- end }}
+
+    {{- if and $peutDeposer $d.Pieces.Form.Propositions }}
+    <form class="formulaire" method="post" action="{{ $d.Pieces.Form.Action }}" enctype="multipart/form-data">
+        <input type="hidden" name="cible_type" value="{{ $d.Pieces.Form.CibleType }}">
+
+        <div class="champ">
+            <label for="piece-cible">{{ .T "devis.pieces.proposition" }}</label>
+            <select id="piece-cible" name="cible_id" required>
+                {{- range $d.Pieces.Form.Propositions }}
+                <option value="{{ .ID }}">{{ .Entreprise }} — {{ $.T "devis.montant" "Valeur" .Montant }}</option>
+                {{- end }}
+            </select>
+        </div>
+
+        <div class="champ">
+            <label for="piece-fichier">{{ .T "document.champ.fichier" }}</label>
+            <input id="piece-fichier" name="fichier" type="file"
+                   accept="application/pdf,image/jpeg,image/png,image/webp" required>
+            <p class="note">{{ .T "document.champ.fichier_aide" }}</p>
+        </div>
+
+        <div class="champ">
+            <label for="piece-categorie">{{ .T "document.champ.categorie" }}</label>
+            <select id="piece-categorie" name="categorie" required>
+                {{- range $d.Pieces.Form.Categories }}
+                <option value="{{ .Value }}" {{ if .Selected }}selected{{ end }}>{{ .Label }}</option>
+                {{- end }}
+            </select>
+        </div>
+
+        <div class="champ">
+            <label for="piece-description">{{ .T "document.champ.description" }}</label>
+            <textarea id="piece-description" name="description" rows="2"></textarea>
+        </div>
+
+        <div class="actions">
+            <button class="button" type="submit">{{ .T "devis.pieces.soumettre" }}</button>
+        </div>
+    </form>
+    {{- end }}
+</section>
+{{- end }}
+{{- end }}
+
 {{- if $peutEcrire }}
 {{- if $d.Demande.Close }}
 <section class="card" aria-labelledby="titre-ajout">

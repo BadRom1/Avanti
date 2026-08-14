@@ -9,8 +9,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Romain-Badino/Avanti/internal/adapters/postgres"
+	"github.com/Romain-Badino/Avanti/internal/adapters/storage"
 	"github.com/Romain-Badino/Avanti/internal/adapters/web"
 	"github.com/Romain-Badino/Avanti/internal/devis"
+	"github.com/Romain-Badino/Avanti/internal/document"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/config"
@@ -40,6 +42,11 @@ type instance struct {
 	// sur leur dépôt PostgreSQL. L'adapter web le recevra tel quel : c'est le
 	// domaine qu'il voit, jamais sa persistance (R4).
 	devisService *devis.Service
+
+	// documentsService porte les cas d'usage des pièces du dossier, montés sur
+	// le dépôt PostgreSQL des métadonnées et sur le stockage de contenu que la
+	// configuration a choisi — voir newDocumentStorage.
+	documentsService *document.Service
 
 	// oauthStore est le magasin du serveur d'autorisation. Il vit dans la famille
 	// postgres et sera injecté dans l'adapter web : c'est le point où les deux
@@ -102,14 +109,21 @@ func openInstance(ctx context.Context, stderr io.Writer) (*instance, func(), err
 		return nil, func() {}, err
 	}
 
+	documentsService, err := newDocumentService(cfg, pool)
+	if err != nil {
+		pool.Close()
+		return nil, func() {}, err
+	}
+
 	return &instance{
-		cfg:          cfg,
-		logger:       logger,
-		build:        platform.Build(),
-		pool:         pool,
-		accounts:     accounts,
-		devisService: devisService,
-		oauthStore:   oauthStore,
+		cfg:              cfg,
+		logger:           logger,
+		build:            platform.Build(),
+		pool:             pool,
+		accounts:         accounts,
+		devisService:     devisService,
+		documentsService: documentsService,
+		oauthStore:       oauthStore,
 	}, pool.Close, nil
 }
 
@@ -125,6 +139,50 @@ func newDevisService(pool *pgxpool.Pool) (*devis.Service, error) {
 	}
 
 	return devis.NewService(devis.ServiceOptions{Repo: repo})
+}
+
+// newDocumentService branche le domaine des documents sur ses deux ports : le
+// dépôt PostgreSQL des métadonnées, et le stockage de contenu choisi par la
+// configuration.
+func newDocumentService(cfg *config.Config, pool *pgxpool.Pool) (*document.Service, error) {
+	repo, err := postgres.NewDocumentRepo(pool)
+	if err != nil {
+		return nil, err
+	}
+
+	contentStorage, err := newDocumentStorage(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return document.NewService(document.ServiceOptions{Repo: repo, Storage: contentStorage})
+}
+
+// newDocumentStorage choisit l'implémentation du port document.Storage selon
+// la configuration.
+//
+// C'est le modèle d'extension de docs/ARCHITECTURE.md §3 en un endroit : le
+// port du domaine est le point d'extension, ses implémentations vivent dans
+// adapters/storage, et c'est ici — dans cmd/avanti, seul autorisé à connaître
+// les deux (R4) — que la configuration tranche laquelle brancher. Un troisième
+// stockage s'ajouterait par une implémentation de plus et un cas de plus dans
+// ce switch, sans toucher au domaine ni à l'adapter web.
+func newDocumentStorage(cfg *config.Config) (document.Storage, error) {
+	switch cfg.StorageBackend {
+	case config.StorageS3:
+		return storage.NewS3(storage.S3Options{
+			Endpoint:  cfg.S3Endpoint,
+			Bucket:    cfg.S3Bucket,
+			AccessKey: cfg.S3AccessKey,
+			SecretKey: cfg.S3SecretKey,
+			Region:    cfg.S3Region,
+			UseSSL:    cfg.S3UseSSL,
+		})
+	default:
+		// La configuration a déjà validé la valeur : le défaut ne peut être
+		// que filesystem.
+		return storage.NewFilesystem(cfg.DocumentsDir)
+	}
 }
 
 // oauthPurgeTimeout borne une passe de ménage. Elle est courte : la requête est

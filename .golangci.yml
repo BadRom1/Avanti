@@ -140,6 +140,7 @@ linters:
         - finisse
         - normalise
         - origines
+        - sinistre
         - terminaison
         - trafic
         - transforme
@@ -472,6 +473,14 @@ linters:
             - github.com/Romain-Badino/Avanti/internal/identity
             - github.com/Romain-Badino/Avanti/internal/planning
             - github.com/Romain-Badino/Avanti/internal/platform
+            # minio-go : le client S3-compatible du second adapter de stockage,
+            # celui qui démontre le modèle d'extension (docs/ARCHITECTURE.md
+            # §3). Un client léger et sans framework, là où le SDK AWS complet
+            # tirerait des dizaines de modules pour trois opérations (PUT, GET,
+            # DELETE). Ici seulement : le port document.Storage est le point
+            # d'extension, et le vocabulaire S3 n'a rien à faire ailleurs — ni
+            # dans le domaine (R1), ni dans une autre famille d'adapters (R4).
+            - github.com/minio/minio-go/v7
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
               desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"

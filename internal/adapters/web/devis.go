@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Romain-Badino/Avanti/internal/devis"
+	"github.com/Romain-Badino/Avanti/internal/document"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 )
 
@@ -78,6 +79,9 @@ var avisCatalog = map[string]struct {
 	avisDevisRetenu:  {messageID: "devis.avis.devis_retenu"},
 	avisDevisRefuse:  {messageID: "devis.avis.devis_refuse"},
 	avisDejaTranche:  {messageID: "devis.avis.deja_tranche", erreur: true},
+	// L'avis du domaine document vit dans la même table : un dépôt rattaché à
+	// un devis redirige vers la page de comparaison, qui doit savoir le lire.
+	avisDocumentAjoute: {messageID: "document.avis.ajoute"},
 }
 
 // devisErrorMessages traduit les erreurs métier en messages du catalogue.
@@ -339,8 +343,52 @@ type comparaisonData struct {
 	// Form est le formulaire d'ajout d'un devis reçu, réaffiché tel quel après un
 	// refus de saisie.
 	Form devisFormData
+	// Pieces sont les pièces rattachées aux propositions, avec le formulaire
+	// de dépôt qui poste vers le domaine document.
+	Pieces piecesData
 	// Avis est le message qui suit une action, s'il y en a un.
 	Avis avisView
+}
+
+// piecesData est la section « Pièces » de la page de comparaison.
+type piecesData struct {
+	// Groupes rassemble les pièces par proposition ; une proposition sans
+	// pièce n'y figure pas.
+	Groupes []pieceGroup
+	// Form est le formulaire de dépôt rattaché à une proposition. Le gabarit
+	// ne l'affiche que s'il y a au moins une proposition à rattacher.
+	Form pieceFormData
+}
+
+// pieceGroup est la liste des pièces d'une proposition.
+type pieceGroup struct {
+	Entreprise string
+	Pieces     []pieceRow
+}
+
+// pieceRow est une pièce affichée, déjà traduite.
+type pieceRow struct {
+	Nom       string
+	URL       string
+	Categorie string
+	Taille    string
+}
+
+// pieceFormData est le formulaire de dépôt d'une pièce sur une proposition.
+// Il poste vers POST /documents avec un cible_type figé à « devis » et un
+// cible_id choisi parmi les propositions.
+type pieceFormData struct {
+	Action       string
+	CibleType    string
+	Propositions []pieceCible
+	Categories   []categorieOption
+}
+
+// pieceCible est une proposition offerte au rattachement.
+type pieceCible struct {
+	ID         string
+	Entreprise string
+	Montant    string
 }
 
 // demandeHeader décrit la consultation en tête de la page de comparaison.
@@ -417,12 +465,82 @@ func (h *Handler) handleDemande(w http.ResponseWriter, r *http.Request) {
 // renderComparaison rend la page de comparaison, avec le formulaire d'ajout
 // dans l'état où l'appelant le lui donne.
 func (h *Handler) renderComparaison(w http.ResponseWriter, r *http.Request, status int, comparaison devis.Comparaison, form devisFormData) {
+	pieces, err := h.piecesForComparaison(r, comparaison)
+	if err != nil {
+		h.failDevis(w, r, fmt.Errorf("lecture des pièces des propositions : %w", err))
+		return
+	}
+
 	h.render(w, r, pageDevisComparaison, status, comparaisonData{
 		Demande: newDemandeHeader(comparaison),
 		Devis:   h.newDevisRows(r, comparaison),
 		Form:    form,
+		Pieces:  pieces,
 		Avis:    h.avisFor(r),
 	})
+}
+
+// piecesForComparaison assemble la section « Pièces » : les pièces rattachées
+// à chaque proposition, et le formulaire de dépôt.
+//
+// Une lecture par proposition, et c'est assumé : une comparaison porte
+// quelques devis, jamais des centaines — c'est l'assemblage de vue transverse
+// que R2 prévoit, dans l'adapter web, en interrogeant chaque domaine.
+//
+// Les scopes décident de ce qui est construit, pas seulement de ce qui
+// s'affiche : sans document:read, les pièces ne sont pas lues — le gabarit ne
+// serait pas seul à jeter les données, elles n'auraient jamais dû sortir du
+// domaine ; sans document:write, le formulaire n'est pas assemblé. Les gates
+// Can du gabarit restent en place, et les deux couches disent la même chose.
+func (h *Handler) piecesForComparaison(r *http.Request, comparaison devis.Comparaison) (piecesData, error) {
+	actor := ActorFromContext(r.Context())
+	canRead := actor.Allows(identity.ScopeDocumentRead)
+	canWrite := actor.Allows(identity.ScopeDocumentWrite)
+
+	data := piecesData{Form: pieceFormData{
+		Action:    documentsPath,
+		CibleType: document.TargetDevis.String(),
+	}}
+	if canWrite {
+		data.Form.Categories = h.categorieOptions(r, "")
+	}
+
+	for _, proposition := range comparaison.Devis {
+		if canWrite {
+			data.Form.Propositions = append(data.Form.Propositions, pieceCible{
+				ID:         proposition.ID.String(),
+				Entreprise: proposition.Artisan.Entreprise,
+				Montant:    formatMontant(proposition.Montant),
+			})
+		}
+		if !canRead {
+			continue
+		}
+
+		docs, err := h.documents.DocumentsByTarget(r.Context(), document.Target{
+			Type: document.TargetDevis,
+			ID:   proposition.ID.String(),
+		})
+		if err != nil {
+			return piecesData{}, err
+		}
+		if len(docs) == 0 {
+			continue
+		}
+
+		group := pieceGroup{Entreprise: proposition.Artisan.Entreprise}
+		for _, doc := range docs {
+			group.Pieces = append(group.Pieces, pieceRow{
+				Nom:       doc.FileName,
+				URL:       documentDownloadPath(doc.ID),
+				Categorie: h.translate(r, "document.categorie."+doc.Category.String()),
+				Taille:    h.formatTaille(r, doc.SizeBytes),
+			})
+		}
+		data.Groupes = append(data.Groupes, group)
+	}
+
+	return data, nil
 }
 
 // newDemandeHeader met l'en-tête de la comparaison sous sa forme d'affichage.

@@ -148,6 +148,11 @@
   "devis.action.refuser_confirmation": "Refuser le devis de {{.Entreprise}} ?",
   "devis.action.annuler": "Annuler",
 
+  "devis.pieces.heading": "Pièces",
+  "devis.pieces.vide": "Aucune pièce rattachée aux propositions pour l'instant.",
+  "devis.pieces.proposition": "Proposition concernée",
+  "devis.pieces.soumettre": "Déposer la pièce",
+
   "devis.avis.demande_creee": "La demande a été créée.",
   "devis.avis.devis_ajoute": "Le devis a été enregistré.",
   "devis.avis.devis_retenu": "Le devis a été retenu, les offres concurrentes ont été refusées.",
@@ -168,6 +173,55 @@
   "devis.erreur.devis_inconnu": "Ce devis n'existe pas.",
   "devis.erreur.demande_close": "Cette consultation est close : un devis a déjà été retenu.",
   "devis.erreur.deja_tranche": "Ce devis a déjà été tranché.",
+
+  "document.index.title": "Documents",
+  "document.index.heading": "Pièces du dossier",
+  "document.index.intro": "Devis signés, factures scannées, photos de chantier, rapports d'expertise et courriers d'assurance : chaque pièce est classée, et rattachée à ce qu'elle justifie quand il y a lieu.",
+  "document.index.vide": "Aucune pièce pour l'instant. Déposez la première : un devis signé, une photo du chantier, un courrier de l'assurance.",
+  "document.index.tableau_heading": "Toutes les pièces",
+  "document.index.legende": "Pièces du dossier, de la plus récente à la plus ancienne.",
+
+  "document.champ.nom": "Fichier",
+  "document.champ.categorie": "Catégorie",
+  "document.champ.taille": "Taille",
+  "document.champ.depose_le": "Déposée le",
+  "document.champ.rattachement": "Rattachement",
+  "document.champ.fichier": "Fichier à déposer",
+  "document.champ.fichier_aide": "PDF, JPEG, PNG ou WebP, 25 Mio au maximum. C'est le contenu du fichier qui est vérifié, pas son extension.",
+  "document.champ.description": "Description",
+
+  "document.televerser.heading": "Déposer une pièce",
+  "document.televerser.soumettre": "Déposer la pièce",
+
+  "document.categorie.devis_signe": "Devis signé",
+  "document.categorie.facture": "Facture",
+  "document.categorie.photo_chantier": "Photo de chantier",
+  "document.categorie.rapport_expertise": "Rapport d'expertise",
+  "document.categorie.courrier_assurance": "Courrier d'assurance",
+  "document.categorie.autre": "Autre",
+
+  "document.rattachement.aucun": "Pièce libre",
+  "document.rattachement.devis": "Devis de {{.Entreprise}}",
+  "document.rattachement.devis_disparu": "Devis disparu",
+  "document.rattachement.cible": "{{.Type}} {{.ID}}",
+
+  "document.taille.octets": "{{.Valeur}} o",
+  "document.taille.kio": "{{.Valeur}} Kio",
+  "document.taille.mio": "{{.Valeur}} Mio",
+
+  "document.avis.ajoute": "La pièce a été déposée.",
+
+  "document.erreur.fichier_manquant": "Choisissez un fichier à déposer.",
+  "document.erreur.nom_vide": "Le nom du fichier est vide ou inutilisable.",
+  "document.erreur.nom_trop_long": "Le nom du fichier est trop long.",
+  "document.erreur.description_trop_longue": "La description est trop longue.",
+  "document.erreur.trop_gros": "Ce fichier dépasse la taille maximale de 25 Mio.",
+  "document.erreur.contenu_vide": "Ce fichier est vide.",
+  "document.erreur.type_interdit": "Ce type de fichier n'est pas accepté. Formats admis : PDF, JPEG, PNG, WebP.",
+  "document.erreur.categorie_inconnue": "Choisissez une catégorie dans la liste.",
+  "document.erreur.cible_invalide": "Le rattachement de la pièce est incohérent.",
+  "document.erreur.cible_devis_inconnue": "Le devis auquel rattacher cette pièce n'existe pas.",
+  "document.erreur.televersement_invalide": "Le téléversement est illisible. Repassez par le formulaire de dépôt.",
 
   "footer.version": "Version {{.Version}}",
   "footer.license": "Distribué sous licence AGPL-3.0.",

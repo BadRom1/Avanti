@@ -14,6 +14,9 @@ import (
 // utilisée nulle part ailleurs.
 const testOAuthSecret = "cle-de-test-uniquement-pour-la-suite-de-tests"
 
+// testS3Secret est la clé secrète S3 des tests, sans aucun usage réel.
+const testS3Secret = "secret-s3-de-test-sans-usage-reel"
+
 // validEnv est le plus petit environnement qui charge. Deux variables n'ont pas
 // de valeur par défaut raisonnable : la base de données, et la clé HMAC du
 // serveur d'autorisation — qu'aucune valeur engendrée au démarrage ne pourrait
@@ -74,6 +77,9 @@ func TestLoadDefaults(t *testing.T) {
 	if !filepath.IsAbs(cfg.DocumentsDir) {
 		t.Errorf("DocumentsDir = %q, doit être rendu absolu", cfg.DocumentsDir)
 	}
+	if cfg.StorageBackend != config.StorageFilesystem {
+		t.Errorf("StorageBackend = %q, attendu %q par défaut", cfg.StorageBackend, config.StorageFilesystem)
+	}
 	if string(cfg.OAuthSecret) != testOAuthSecret {
 		t.Errorf("OAuthSecret = %q, attendu la valeur fournie", cfg.OAuthSecret)
 	}
@@ -103,6 +109,40 @@ func TestLogValueHidesOAuthSecret(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "oauth_secret_length") {
 		t.Errorf("LogValue() devrait tout de même dire la longueur de la clé : %s", rendered)
+	}
+}
+
+// TestLogValueHidesS3Credentials : la clé secrète S3 suit la règle de la clé
+// HMAC — jamais dans les journaux — et l'identifiant d'accès non plus, par
+// prudence : il est la moitié d'une paire d'identifiants.
+func TestLogValueHidesS3Credentials(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(lookupFrom(validEnv(map[string]string{
+		"AVANTI_STORAGE_BACKEND": "s3",
+		"AVANTI_S3_ENDPOINT":     "s3.example.org:9000",
+		"AVANTI_S3_BUCKET":       "avanti-documents",
+		"AVANTI_S3_ACCESS_KEY":   "avanti-acces-test",
+		"AVANTI_S3_SECRET_KEY":   testS3Secret,
+	})))
+	if err != nil {
+		t.Fatalf("Load() a échoué : %v", err)
+	}
+
+	rendered := cfg.LogValue().String()
+
+	for name, leaked := range map[string]string{
+		"clé secrète":            testS3Secret,
+		"préfixe de clé secrète": testS3Secret[:8],
+		"identifiant d'accès":    "avanti-acces-test",
+	} {
+		if strings.Contains(rendered, leaked) {
+			t.Errorf("LogValue() divulgue la %s S3 : %s", name, rendered)
+		}
+	}
+	// Le reste doit rester exploitable pour diagnostiquer un branchement.
+	if !strings.Contains(rendered, "s3.example.org:9000") || !strings.Contains(rendered, "avanti-documents") {
+		t.Errorf("LogValue() = %s, l'adresse et le seau doivent y figurer", rendered)
 	}
 }
 
@@ -215,6 +255,65 @@ func TestLoadAccepts(t *testing.T) {
 			},
 		},
 		{
+			name: "le backend s3 se choisit, avec ses variables",
+			env: map[string]string{
+				"AVANTI_STORAGE_BACKEND": "S3",
+				"AVANTI_S3_ENDPOINT":     "s3.example.org:9000",
+				"AVANTI_S3_BUCKET":       "avanti-documents",
+				"AVANTI_S3_ACCESS_KEY":   "avanti-acces-test",
+				"AVANTI_S3_SECRET_KEY":   testS3Secret,
+				"AVANTI_S3_REGION":       "garage",
+			},
+			check: func(t *testing.T, cfg *config.Config) {
+				t.Helper()
+				if cfg.StorageBackend != config.StorageS3 {
+					t.Errorf("StorageBackend = %q", cfg.StorageBackend)
+				}
+				if cfg.S3Endpoint != "s3.example.org:9000" || cfg.S3Bucket != "avanti-documents" {
+					t.Errorf("S3 = %q / %q", cfg.S3Endpoint, cfg.S3Bucket)
+				}
+				if cfg.S3AccessKey != "avanti-acces-test" || cfg.S3SecretKey != testS3Secret {
+					t.Error("les identifiants S3 ne sont pas repris tels quels")
+				}
+				if cfg.S3Region != "garage" {
+					t.Errorf("S3Region = %q", cfg.S3Region)
+				}
+				if !cfg.S3UseSSL {
+					t.Error("S3UseSSL doit valoir true par défaut")
+				}
+			},
+		},
+		{
+			name: "le TLS du S3 se désactive explicitement",
+			env: map[string]string{
+				"AVANTI_STORAGE_BACKEND": "s3",
+				"AVANTI_S3_ENDPOINT":     "127.0.0.1:9000",
+				"AVANTI_S3_BUCKET":       "avanti-documents",
+				"AVANTI_S3_ACCESS_KEY":   "avanti-acces-test",
+				"AVANTI_S3_SECRET_KEY":   testS3Secret,
+				"AVANTI_S3_USE_SSL":      "false",
+			},
+			check: func(t *testing.T, cfg *config.Config) {
+				t.Helper()
+				if cfg.S3UseSSL {
+					t.Error("S3UseSSL = true, attendu false")
+				}
+			},
+		},
+		{
+			name: "les variables S3 sont ignorées avec le backend filesystem",
+			env: map[string]string{
+				"AVANTI_STORAGE_BACKEND": "filesystem",
+				"AVANTI_S3_ENDPOINT":     "s3.example.org:9000",
+			},
+			check: func(t *testing.T, cfg *config.Config) {
+				t.Helper()
+				if cfg.S3Endpoint != "" {
+					t.Errorf("S3Endpoint = %q, attendu vide hors backend s3", cfg.S3Endpoint)
+				}
+			},
+		},
+		{
 			name: "les délais d'attente se règlent",
 			env: map[string]string{
 				"AVANTI_DB_CONNECT_TIMEOUT": "3s",
@@ -291,6 +390,63 @@ func TestLoadRejects(t *testing.T) {
 			name: "environnement inconnu",
 			env:  map[string]string{"AVANTI_ENV": "staging"},
 			want: "AVANTI_ENV",
+		},
+		{
+			name: "backend de stockage inconnu",
+			env:  map[string]string{"AVANTI_STORAGE_BACKEND": "disquette"},
+			want: "AVANTI_STORAGE_BACKEND",
+		},
+		{
+			name: "backend s3 sans adresse",
+			env: map[string]string{
+				"AVANTI_STORAGE_BACKEND": "s3",
+				"AVANTI_S3_BUCKET":       "avanti-documents",
+				"AVANTI_S3_ACCESS_KEY":   "avanti-acces-test",
+				"AVANTI_S3_SECRET_KEY":   testS3Secret,
+			},
+			want: "AVANTI_S3_ENDPOINT",
+		},
+		{
+			name: "backend s3 sans seau",
+			env: map[string]string{
+				"AVANTI_STORAGE_BACKEND": "s3",
+				"AVANTI_S3_ENDPOINT":     "s3.example.org:9000",
+				"AVANTI_S3_ACCESS_KEY":   "avanti-acces-test",
+				"AVANTI_S3_SECRET_KEY":   testS3Secret,
+			},
+			want: "AVANTI_S3_BUCKET",
+		},
+		{
+			name: "backend s3 sans clé d'accès",
+			env: map[string]string{
+				"AVANTI_STORAGE_BACKEND": "s3",
+				"AVANTI_S3_ENDPOINT":     "s3.example.org:9000",
+				"AVANTI_S3_BUCKET":       "avanti-documents",
+				"AVANTI_S3_SECRET_KEY":   testS3Secret,
+			},
+			want: "AVANTI_S3_ACCESS_KEY",
+		},
+		{
+			name: "backend s3 sans clé secrète",
+			env: map[string]string{
+				"AVANTI_STORAGE_BACKEND": "s3",
+				"AVANTI_S3_ENDPOINT":     "s3.example.org:9000",
+				"AVANTI_S3_BUCKET":       "avanti-documents",
+				"AVANTI_S3_ACCESS_KEY":   "avanti-acces-test",
+			},
+			want: "AVANTI_S3_SECRET_KEY",
+		},
+		{
+			name: "booléen S3_USE_SSL mal orthographié",
+			env: map[string]string{
+				"AVANTI_STORAGE_BACKEND": "s3",
+				"AVANTI_S3_ENDPOINT":     "s3.example.org:9000",
+				"AVANTI_S3_BUCKET":       "avanti-documents",
+				"AVANTI_S3_ACCESS_KEY":   "avanti-acces-test",
+				"AVANTI_S3_SECRET_KEY":   testS3Secret,
+				"AVANTI_S3_USE_SSL":      "oui",
+			},
+			want: "AVANTI_S3_USE_SSL",
 		},
 		{
 			name: "adresse d'écoute sans port",

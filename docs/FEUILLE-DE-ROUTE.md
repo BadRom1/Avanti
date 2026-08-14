@@ -24,26 +24,16 @@ Le rituel de travail par lot est décrit dans `CLAUDE.md` ; l'architecture dans
 - **Lot 5 — Domaine Devis** : voir le commit correspondant (demandes de devis,
   comparaison, retenir/refuser avec invariant « un seul retenu par demande »,
   atomicité en base, UI de comparaison, gardes par scopes).
+- **Lot 6 — Domaine Document** : métadonnées et classement des pièces,
+  rattachement par référence faible (type de cible + id, borné et normalisé),
+  port de stockage `document.Storage` (point d'extension plugin officiel) avec
+  adapters filesystem par défaut (os.Root, clés UUID validées, écriture
+  atomique par lien dur) et S3-compatible en démonstration (minio-go), choix
+  par `AVANTI_STORAGE_BACKEND`, scopes document:read/write, UI de
+  téléversement (MIME sniffé, allow-list stricte, 25 Mio max), listing,
+  téléchargement authentifié, pièces rattachées sur les pages devis.
 
 ## À faire
-
-### Lot 6 — Domaine Document
-
-- Domaine : métadonnées de pièces (devis signés, factures scannées, photos de
-  chantier, rapports d'expertise, courriers assurance), classement, rattachement
-  par référence faible (type de cible + id : devis, facture, étape) — R2.
-- Le contenu binaire ne passe JAMAIS par le domaine : port de stockage
-  (`DocumentStorage` ou équivalent), **point d'extension plugin officiel**.
-- Adapter stockage filesystem par défaut (répertoire de `AVANTI_DOCUMENTS_DIR`,
-  noms de fichiers non devinables, pas de traversée) ; **adapter S3-compatible
-  en second, comme plugin de démonstration** (nouvelle famille d'adapters ou
-  sous-package de storage ; choisi par la config, assemblé par cmd/).
-- Permissions simples lecture/écriture via scopes document:read/write.
-- UI : téléversement (limites de taille et de types MIME strictes), listing,
-  rattachement depuis les pages devis (les devis portent déjà des documentIDs
-  faibles), téléchargement authentifié (jamais de fichier servi sans contrôle
-  de scope).
-- Brancher le téléversement de pièces sur les pages Devis existantes.
 
 ### Lot 7 — Domaine Finance
 

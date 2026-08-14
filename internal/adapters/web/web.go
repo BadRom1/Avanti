@@ -17,6 +17,7 @@ import (
 	"github.com/alexedwards/scs/v2"
 
 	"github.com/Romain-Badino/Avanti/internal/devis"
+	"github.com/Romain-Badino/Avanti/internal/document"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/server"
@@ -70,6 +71,12 @@ type Options struct {
 	// Le service est construit par cmd/avanti sur le dépôt PostgreSQL : cet
 	// adapter ne voit que le domaine, jamais sa persistance (R4).
 	Devis *devis.Service
+	// Documents porte les cas d'usage des pièces du dossier. Obligatoire.
+	//
+	// Comme Devis, c'est le domaine que cet adapter voit — jamais le dépôt
+	// PostgreSQL des métadonnées ni le stockage du contenu, que cmd/avanti
+	// choisit et injecte dans le service (R4).
+	Documents *document.Service
 	// Clock sert d'horloge au serveur d'autorisation et aux dates proposées par
 	// les formulaires. nil signifie time.Now ; les tests en injectent une pour ne
 	// pas avoir à attendre l'expiration d'un jeton, et pour que les valeurs
@@ -79,18 +86,19 @@ type Options struct {
 
 // Handler sert l'interface humaine d'Avanti.
 type Handler struct {
-	root     http.Handler
-	mux      *http.ServeMux
-	logger   *slog.Logger
-	catalog  *Catalog
-	pages    map[string]*template.Template
-	version  string
-	accounts *identity.AccountService
-	sessions *scs.SessionManager
-	limiter  *loginLimiter
-	oauth    *oauthServer
-	devis    *devis.Service
-	clock    func() time.Time
+	root      http.Handler
+	mux       *http.ServeMux
+	logger    *slog.Logger
+	catalog   *Catalog
+	pages     map[string]*template.Template
+	version   string
+	accounts  *identity.AccountService
+	sessions  *scs.SessionManager
+	limiter   *loginLimiter
+	oauth     *oauthServer
+	devis     *devis.Service
+	documents *document.Service
+	clock     func() time.Time
 }
 
 // New construit l'adapter : catalogue de traductions, gabarits compilés une
@@ -112,6 +120,8 @@ func New(opts Options) (*Handler, error) {
 		return nil, errors.New("web : magasin OAuth manquant")
 	case opts.Devis == nil:
 		return nil, errors.New("web : service des devis manquant")
+	case opts.Documents == nil:
+		return nil, errors.New("web : service des documents manquant")
 	}
 
 	catalog, err := NewCatalog()
@@ -130,17 +140,18 @@ func New(opts Options) (*Handler, error) {
 	}
 
 	h := &Handler{
-		mux:      http.NewServeMux(),
-		logger:   opts.Logger,
-		catalog:  catalog,
-		pages:    pages,
-		version:  opts.Build.Version,
-		accounts: opts.Accounts,
-		sessions: newSessionManager(opts.Sessions, opts.BaseURL),
-		limiter:  newLimiter(nil),
-		oauth:    oauth,
-		devis:    opts.Devis,
-		clock:    opts.Clock,
+		mux:       http.NewServeMux(),
+		logger:    opts.Logger,
+		catalog:   catalog,
+		pages:     pages,
+		version:   opts.Build.Version,
+		accounts:  opts.Accounts,
+		sessions:  newSessionManager(opts.Sessions, opts.BaseURL),
+		limiter:   newLimiter(nil),
+		oauth:     oauth,
+		devis:     opts.Devis,
+		documents: opts.Documents,
+		clock:     opts.Clock,
 	}
 
 	h.mux.HandleFunc("GET /{$}", h.handleHome)
@@ -149,6 +160,7 @@ func New(opts Options) (*Handler, error) {
 	h.mux.HandleFunc("POST "+logoutPath, h.handleLogout)
 	h.mux.Handle("GET "+staticPrefix, http.StripPrefix(staticPrefix, staticFileServer()))
 	h.mountDevis()
+	h.mountDocuments()
 	h.mountOAuth()
 	h.mux.HandleFunc("/", h.handleNotFound)
 
@@ -260,6 +272,8 @@ const (
 	pageDevisIndex           = "devis_index.gohtml"
 	pageDevisComparaison     = "devis_comparaison.gohtml"
 	pageDevisNouvelleDemande = "devis_nouvelle_demande.gohtml"
+
+	pageDocumentsIndex = "documents_index.gohtml"
 )
 
 // render écrit la page demandée, et bascule sur la page d'erreur si le rendu
