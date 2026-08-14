@@ -313,6 +313,116 @@ func TestDocumentUploadTargetNormalization(t *testing.T) {
 	})
 }
 
+// TestDocumentUploadCibleEtape : le rattachement à une étape est vérifié comme
+// ceux des devis et des factures — une étape inconnue refuse le dépôt, une
+// étape réelle le rattache et ramène au planning.
+func TestDocumentUploadCibleEtape(t *testing.T) {
+	t.Parallel()
+
+	t.Run("étape inconnue : refusé en 422, rien n'est écrit", func(t *testing.T) {
+		t.Parallel()
+
+		s := newSite(t)
+		b := newBrowser(t, s.handler)
+		b.login(ownerEmail)
+
+		result := postUpload(t, b, map[string]string{
+			"categorie":  "photo_chantier",
+			"cible_type": "etape",
+			"cible_id":   "6bbd562d-51ab-4bee-ab5b-1b9ec2a08ec5",
+		}, uploadField{name: "photo.pdf", content: []byte(pdfContent), contentType: "application/pdf"})
+
+		if result.Status != http.StatusUnprocessableEntity {
+			t.Fatalf("statut = %d, attendu 422 — corps : %s", result.Status, result.Body)
+		}
+		if !strings.Contains(html.UnescapeString(result.Body), "étape à laquelle rattacher cette pièce n'existe pas") {
+			t.Errorf("le refus n'est pas celui de la cible inconnue : %s", result.Body)
+		}
+		if len(s.storage.contents) != 0 {
+			t.Error("un contenu a été stocké malgré le refus")
+		}
+	})
+
+	t.Run("étape réelle : rattachée, redirigé vers le planning", func(t *testing.T) {
+		t.Parallel()
+
+		s := newSite(t)
+		b := newBrowser(t, s.handler)
+		b.login(ownerEmail)
+
+		if result := posterEtape(t, b, "Charpente", "2026-04-01", "2026-04-20"); result.Status != http.StatusSeeOther {
+			t.Fatalf("création de l'étape : statut = %d", result.Status)
+		}
+		etape := etapeEnregistree(t, s, "Charpente")
+
+		result := postUpload(t, b, map[string]string{
+			"categorie":  "photo_chantier",
+			"cible_type": "etape",
+			"cible_id":   etape.ID.String(),
+		}, uploadField{name: "avancement.pdf", content: []byte(pdfContent), contentType: "application/pdf"})
+
+		if result.Status != http.StatusSeeOther || !strings.HasPrefix(result.Location(), "/planning") {
+			t.Fatalf("statut = %d, redirection = %q — attendu 303 vers /planning", result.Status, result.Location())
+		}
+
+		doc, ok := s.documents.documentParNom("avancement.pdf")
+		if !ok {
+			t.Fatal("la pièce n'a pas été enregistrée")
+		}
+		want := document.Target{Type: document.TargetEtape, ID: etape.ID.String()}
+		if doc.Target != want {
+			t.Errorf("Target = %+v, attendu %+v", doc.Target, want)
+		}
+	})
+}
+
+// TestDocumentRowsNameFactureAndEtapeTargets : la liste des pièces décrit les
+// rattachements de TOUS les types de cible — le nom de l'entreprise et le
+// numéro pour une facture, le nom de l'étape pour le planning — au lieu d'un
+// libellé générique « type + identifiant ».
+func TestDocumentRowsNameFactureAndEtapeTargets(t *testing.T) {
+	t.Parallel()
+
+	s := newSite(t)
+	b := newBrowser(t, s.handler)
+	b.login(ownerEmail)
+
+	// Une facture (posterFacture pose le numéro F-2026-042) et une étape.
+	if result := posterFacture(t, b, "", "Négoce Matériaux", "400,00"); result.Status != http.StatusSeeOther {
+		t.Fatalf("facture : statut = %d", result.Status)
+	}
+	facture, ok := s.finance.factureParEntreprise("Négoce Matériaux")
+	if !ok {
+		t.Fatal("la facture n'a pas été enregistrée")
+	}
+	if result := posterEtape(t, b, "Couverture", "2026-05-01", "2026-05-20"); result.Status != http.StatusSeeOther {
+		t.Fatalf("étape : statut = %d", result.Status)
+	}
+	etape := etapeEnregistree(t, s, "Couverture")
+
+	for name, fields := range map[string]map[string]string{
+		"facture.pdf":  {"categorie": "facture", "cible_type": "facture", "cible_id": facture.ID.String()},
+		"chantier.pdf": {"categorie": "photo_chantier", "cible_type": "etape", "cible_id": etape.ID.String()},
+	} {
+		if result := postUpload(t, b, fields, uploadField{
+			name: name, content: []byte(pdfContent), contentType: "application/pdf",
+		}); result.Status != http.StatusSeeOther {
+			t.Fatalf("dépôt de %s : statut = %d — corps : %s", name, result.Status, result.Body)
+		}
+	}
+
+	liste := b.get("/documents")
+	if liste.Status != http.StatusOK {
+		t.Fatalf("liste des pièces : statut = %d", liste.Status)
+	}
+	body := html.UnescapeString(liste.Body)
+	for _, want := range []string{"Facture F-2026-042 de Négoce Matériaux", "Étape Couverture"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("la liste des pièces n'affiche pas %q :\n%s", want, liste.Body)
+		}
+	}
+}
+
 // TestDocumentDownloadDispositionHardNames documente l'en-tête réellement émis
 // pour les noms difficiles : mime.FormatMediaType encode un nom non-ASCII en
 // RFC 2231 (filename*=utf-8”…) SANS repli filename= ASCII — constaté et

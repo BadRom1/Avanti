@@ -156,7 +156,12 @@ func TestLoadAccepts(t *testing.T) {
 	}{
 		{
 			name: "production bascule les journaux en JSON",
-			env:  map[string]string{"AVANTI_ENV": "production"},
+			env: map[string]string{
+				"AVANTI_ENV": "production",
+				// En production, le mot de passe d'exemple est refusé : ces cas
+				// portent sur autre chose, ils passent donc un mot de passe réel.
+				"AVANTI_DATABASE_URL": "postgres://avanti:tr3s-secret@db.example.org:5432/avanti",
+			},
 			check: func(t *testing.T, cfg *config.Config) {
 				t.Helper()
 				if cfg.LogFormat != config.LogJSON {
@@ -166,7 +171,11 @@ func TestLoadAccepts(t *testing.T) {
 		},
 		{
 			name: "le format de journal explicite l'emporte sur l'environnement",
-			env:  map[string]string{"AVANTI_ENV": "production", "AVANTI_LOG_FORMAT": "TEXT"},
+			env: map[string]string{
+				"AVANTI_ENV":          "production",
+				"AVANTI_LOG_FORMAT":   "TEXT",
+				"AVANTI_DATABASE_URL": "postgres://avanti:tr3s-secret@db.example.org:5432/avanti",
+			},
 			check: func(t *testing.T, cfg *config.Config) {
 				t.Helper()
 				if cfg.LogFormat != config.LogText {
@@ -176,7 +185,10 @@ func TestLoadAccepts(t *testing.T) {
 		},
 		{
 			name: "l'environnement est insensible à la casse",
-			env:  map[string]string{"AVANTI_ENV": "Production"},
+			env: map[string]string{
+				"AVANTI_ENV":          "Production",
+				"AVANTI_DATABASE_URL": "postgres://avanti:tr3s-secret@db.example.org:5432/avanti",
+			},
 			check: func(t *testing.T, cfg *config.Config) {
 				t.Helper()
 				if cfg.Environment != config.Production {
@@ -196,10 +208,10 @@ func TestLoadAccepts(t *testing.T) {
 		},
 		{
 			name: "la barre oblique finale de l'URL publique est retirée",
-			env:  map[string]string{"AVANTI_BASE_URL": "https://avanti.example.org/chantier/"},
+			env:  map[string]string{"AVANTI_BASE_URL": "https://avanti.example.org/"},
 			check: func(t *testing.T, cfg *config.Config) {
 				t.Helper()
-				if got := cfg.BaseURL.String(); got != "https://avanti.example.org/chantier" {
+				if got := cfg.BaseURL.String(); got != "https://avanti.example.org" {
 					t.Errorf("BaseURL = %q", got)
 				}
 			},
@@ -376,15 +388,61 @@ func TestLoadRejects(t *testing.T) {
 			want: "AVANTI_OAUTH_SECRET",
 		},
 		{
-			// La valeur d'exemple de .env.example passe en développement et échoue
-			// en production : c'est le seul contrôle de configuration qui dépende de
-			// l'environnement, et il vaut la peine d'être verrouillé par un test.
+			// Les valeurs d'exemple de .env.example passent en développement et
+			// échouent en production : ce sont les seuls contrôles de configuration
+			// qui dépendent de l'environnement, et ils valent la peine d'être
+			// verrouillés par des tests — un par variable couverte.
 			name: "valeur d'exemple de la clé HMAC OAuth en production",
 			env: map[string]string{
 				"AVANTI_ENV":          "production",
 				"AVANTI_OAUTH_SECRET": "change-me-remplacez-par-openssl-rand-base64-32",
 			},
 			want: "AVANTI_OAUTH_SECRET",
+		},
+		{
+			name: "mot de passe d'exemple de la base de données en production",
+			env: map[string]string{
+				"AVANTI_ENV":          "production",
+				"AVANTI_DATABASE_URL": "postgres://avanti:change-me@db.example.org:5432/avanti?sslmode=require",
+				"AVANTI_OAUTH_SECRET": testOAuthSecret,
+			},
+			want: "AVANTI_DATABASE_URL",
+		},
+		{
+			name: "clé d'accès S3 d'exemple en production",
+			env: map[string]string{
+				"AVANTI_ENV":             "production",
+				"AVANTI_DATABASE_URL":    "postgres://avanti:tr3s-secret@db.example.org:5432/avanti",
+				"AVANTI_OAUTH_SECRET":    testOAuthSecret,
+				"AVANTI_STORAGE_BACKEND": "s3",
+				"AVANTI_S3_ENDPOINT":     "s3.example.org:9000",
+				"AVANTI_S3_BUCKET":       "avanti-documents",
+				"AVANTI_S3_ACCESS_KEY":   "change-me-acces-s3",
+				"AVANTI_S3_SECRET_KEY":   testS3Secret,
+			},
+			want: "AVANTI_S3_ACCESS_KEY",
+		},
+		{
+			name: "clé secrète S3 d'exemple en production",
+			env: map[string]string{
+				"AVANTI_ENV":             "production",
+				"AVANTI_DATABASE_URL":    "postgres://avanti:tr3s-secret@db.example.org:5432/avanti",
+				"AVANTI_OAUTH_SECRET":    testOAuthSecret,
+				"AVANTI_STORAGE_BACKEND": "s3",
+				"AVANTI_S3_ENDPOINT":     "s3.example.org:9000",
+				"AVANTI_S3_BUCKET":       "avanti-documents",
+				"AVANTI_S3_ACCESS_KEY":   "avanti-acces-reel",
+				"AVANTI_S3_SECRET_KEY":   "change-me-secret-s3",
+			},
+			want: "AVANTI_S3_SECRET_KEY",
+		},
+		{
+			// L'accès agent (OAuth, MCP) publie ses documents de découverte sous
+			// /.well-known à la racine de l'hôte : une instance sous préfixe serait
+			// introuvable pour tout client conforme, on la refuse au démarrage.
+			name: "URL publique avec un chemin",
+			env:  map[string]string{"AVANTI_BASE_URL": "https://avanti.example.org/chantier"},
+			want: "AVANTI_BASE_URL",
 		},
 		{
 			name: "environnement inconnu",

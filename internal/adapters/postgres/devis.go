@@ -60,7 +60,7 @@ const demandeColumns = `id, lot, description, artisans, envoyee_le, cree_par, cr
 
 // devisColumns est la liste de sélection commune aux lectures de devis.
 const devisColumns = `id, demande_id, entreprise, email, telephone, montant, recu_le, validite, ` +
-	`notes, statut, document_ids, saisi_par, decide_par, decide_le, cree_le, modifie_le`
+	`notes, statut, saisi_par, decide_par, decide_le, cree_le, modifie_le`
 
 // artisanRow est la forme JSON d'un artisan sollicité.
 //
@@ -158,12 +158,12 @@ func (d *DevisRepo) CreateDevis(ctx context.Context, proposition devis.Devis) er
 
 	const query = `
 		INSERT INTO devis (` + devisColumns + `)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
 
 	_, err = d.pool.Exec(ctx, query,
 		id, demandeID, proposition.Artisan.Entreprise, proposition.Artisan.Email, proposition.Artisan.Telephone,
 		int64(proposition.Montant), proposition.ReceivedAt, toInterval(proposition.Validity),
-		proposition.Notes, proposition.Statut.String(), documentIDs(proposition.DocumentIDs), auteur,
+		proposition.Notes, proposition.Statut.String(), auteur,
 		optionalUUID(proposition.DecidedBy), optionalTime(proposition.DecidedAt),
 		proposition.CreatedAt, proposition.UpdatedAt)
 	switch {
@@ -438,7 +438,6 @@ func scanDevis(row rowScanner) (devis.Devis, error) {
 		montant     int64
 		validite    pgtype.Interval
 		statut      string
-		documents   []string
 		saisiPar    pgtype.UUID
 		decidePar   pgtype.UUID
 		decideLe    pgtype.Timestamptz
@@ -447,7 +446,7 @@ func scanDevis(row rowScanner) (devis.Devis, error) {
 	err := row.Scan(&id, &demandeID,
 		&proposition.Artisan.Entreprise, &proposition.Artisan.Email, &proposition.Artisan.Telephone,
 		&montant, &proposition.ReceivedAt, &validite, &proposition.Notes, &statut,
-		&documents, &saisiPar, &decidePar, &decideLe,
+		&saisiPar, &decidePar, &decideLe,
 		&proposition.CreatedAt, &proposition.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return devis.Devis{}, devis.ErrUnknownDevis
@@ -459,9 +458,6 @@ func scanDevis(row rowScanner) (devis.Devis, error) {
 	proposition.ID = devis.ID(id.String())
 	proposition.DemandeID = devis.ID(demandeID.String())
 	proposition.Montant = devis.Montant(montant)
-	if len(documents) > 0 {
-		proposition.DocumentIDs = documents
-	}
 	proposition.Validity = fromInterval(validite)
 	proposition.Statut = devis.Statut(statut)
 	proposition.RecordedBy = devis.ActeurID(saisiPar.String())
@@ -520,20 +516,6 @@ func unmarshalArtisans(raw []byte) ([]devis.Artisan, error) {
 	}
 
 	return artisans, nil
-}
-
-// documentIDs rend la liste des pièces jointes sous une forme que la colonne
-// accepte.
-//
-// Une tranche Go nulle s'encode en NULL, que la table refuse : « aucune pièce »
-// s'écrit comme un tableau vide, pas comme une absence de valeur. La lecture
-// fait le chemin inverse, de sorte qu'un aller-retour rende exactement ce qui a
-// été écrit.
-func documentIDs(ids []string) []string {
-	if ids == nil {
-		return []string{}
-	}
-	return ids
 }
 
 // toInterval traduit une durée de validité en INTERVAL PostgreSQL.

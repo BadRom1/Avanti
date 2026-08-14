@@ -216,6 +216,51 @@ func TestSeedDemoEndToEnd(t *testing.T) {
 	}
 }
 
+// TestSeedDemoRefusesLivedInstance : la garde « instance vide » regarde TOUS
+// les domaines, pas seulement les devis. Une base qui ne contient qu'une
+// facture hors devis a vécu, et le seed doit le dire.
+func TestSeedDemoRefusesLivedInstance(t *testing.T) {
+	dsn := freshDatabase(t)
+
+	t.Setenv("AVANTI_ENV", "development")
+	t.Setenv("AVANTI_DATABASE_URL", dsn)
+	t.Setenv("AVANTI_OAUTH_SECRET", strings.Repeat("k", 44))
+	t.Setenv("AVANTI_DOCUMENTS_DIR", t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{
+		"user", "add", "--email", seedEmail, "--nom", "Romain", "--role", "proprietaire", "--generate",
+	}, &stdout, &stderr); err != nil {
+		t.Fatalf("création du compte : %v — stderr : %s", err, stderr.String())
+	}
+
+	// Une seule facture hors devis, saisie par le service comme le ferait
+	// l'application : aucun devis, aucun autre domaine touché.
+	pool := openPool(t, dsn)
+	financeService, err := newFinanceService(pool)
+	if err != nil {
+		t.Fatalf("newFinanceService() échoué : %v", err)
+	}
+	if _, recordErr := financeService.RecordFacture(t.Context(), finance.FactureInput{
+		Entreprise: "Location Bennes Service",
+		Montant:    72_000,
+		Date:       time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+		By:         finance.ActeurID("9f1c2f6e-2b4a-4d3c-9f6a-1c2d3e4f5a6b"),
+	}); recordErr != nil {
+		t.Fatalf("saisie de la facture : %v", recordErr)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	err = run(t.Context(), []string{"seed", "demo", "--email", seedEmail}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("le seed doit refuser une base qui contient une facture")
+	}
+	if !strings.Contains(err.Error(), "facture") || !strings.Contains(err.Error(), "vide") {
+		t.Errorf("erreur = %q, doit nommer la facture trouvée et exiger une instance vide", err.Error())
+	}
+}
+
 // checkSeededDocuments relit les pièces déposées par le seed : rattachements
 // et contenu binaire — un PDF qui commence bien par sa signature.
 func checkSeededDocuments(t *testing.T, dsn, retainedID string) {

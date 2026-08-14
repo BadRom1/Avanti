@@ -188,7 +188,7 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 		Environment:      env,
 		ListenAddr:       l.listenAddr(),
 		BaseURL:          l.baseURL(),
-		DatabaseURL:      l.databaseURL(),
+		DatabaseURL:      l.databaseURL(env),
 		OAuthSecret:      l.oauthSecret(env),
 		DocumentsDir:     l.documentsDir(),
 		LogLevel:         l.logLevel(),
@@ -197,7 +197,7 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 		DBConnectTimeout: l.duration(keyDBConnectTimeout, defaultDBConnectTimeout),
 		ShutdownTimeout:  l.duration(keyShutdownTimeout, defaultShutdownTimeout),
 	}
-	l.storage(cfg)
+	l.storage(cfg, env)
 
 	if err := errors.Join(l.errs...); err != nil {
 		return nil, fmt.Errorf("configuration invalide :\n%w", err)
@@ -357,29 +357,38 @@ func (l *loader) listenAddr() string {
 	return value
 }
 
-// baseURL valide l'URL publique de l'instance. Le chemin est conservé — une
-// instance peut vivre derrière un préfixe — mais sa barre oblique finale est
-// retirée pour que la concaténation des liens reste prévisible.
+// baseURL valide l'URL publique de l'instance. Elle doit être la racine d'un
+// hôte, sans chemin : les documents de découverte de l'accès agent (RFC 8414
+// et RFC 9728) sont cherchés sous /.well-known À LA RACINE de l'hôte, et une
+// instance servie sous un préfixe (« https://exemple.fr/avanti ») aurait un
+// serveur OAuth et un serveur MCP introuvables pour tout client conforme. La
+// barre oblique finale seule est tolérée et retirée.
 func (l *loader) baseURL() *url.URL {
 	value := l.str(keyBaseURL, defaultBaseURL)
 
 	parsed, err := url.Parse(value)
 	if err != nil {
 		l.reject(keyBaseURL, fmt.Sprintf("URL illisible : %v", err))
-		return mustParseURL(defaultBaseURL)
+		return defaultBaseURLParsed()
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		l.reject(keyBaseURL, fmt.Sprintf("URL absolue en http ou https attendue, par exemple %s, reçu %q", defaultBaseURL, value))
-		return mustParseURL(defaultBaseURL)
+		return defaultBaseURLParsed()
 	}
 	if parsed.Host == "" {
 		l.reject(keyBaseURL, fmt.Sprintf("l'URL doit comporter un hôte, reçu %q", value))
-		return mustParseURL(defaultBaseURL)
+		return defaultBaseURLParsed()
 	}
 
 	parsed.Path = strings.TrimSuffix(parsed.Path, "/")
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
+
+	if parsed.Path != "" {
+		l.reject(keyBaseURL, fmt.Sprintf(
+			"l'URL publique doit être la racine d'un hôte, sans chemin — l'accès agent (OAuth, MCP) publie ses documents de découverte sous /.well-known à la racine ; utilisez un sous-domaine plutôt qu'un préfixe, reçu %q", value))
+		return defaultBaseURLParsed()
+	}
 
 	return parsed
 }
@@ -387,7 +396,11 @@ func (l *loader) baseURL() *url.URL {
 // databaseURL valide la chaîne de connexion PostgreSQL. La validation reste
 // volontairement superficielle : pgx est seul juge de la syntaxe complète, et
 // dupliquer sa grammaire ici ne ferait que créer un second point de vérité.
-func (l *loader) databaseURL() string {
+//
+// Une exception, qui suit la règle d'oauthSecret : en production, le mot de
+// passe d'exemple publié dans le dépôt est refusé — le laisser tourner
+// reviendrait à protéger la base par un mot de passe que .env.example donne.
+func (l *loader) databaseURL(env Environment) string {
 	value := l.required(keyDatabaseURL)
 	if value == "" {
 		return ""
@@ -400,6 +413,13 @@ func (l *loader) databaseURL() string {
 	}
 	if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
 		l.reject(keyDatabaseURL, fmt.Sprintf("schéma postgres:// ou postgresql:// attendu, reçu %q", parsed.Scheme))
+	}
+
+	if password, hasPassword := parsed.User.Password(); hasPassword &&
+		env == Production && strings.HasPrefix(password, placeholderPrefix) {
+		l.reject(keyDatabaseURL, fmt.Sprintf(
+			"le mot de passe d'exemple de .env.example est refusé en %s — donnez à PostgreSQL un mot de passe fort et propre à l'instance",
+			Production))
 	}
 
 	return value
@@ -449,7 +469,11 @@ func (l *loader) oauthSecret(env Environment) []byte {
 // variables S3 d'un backend filesystem sont ignorées, pas validées : une
 // ligne commentée à moitié dans un .env ne doit pas empêcher un démarrage qui
 // ne s'en sert pas.
-func (l *loader) storage(cfg *Config) {
+//
+// En production, les identifiants S3 d'exemple (préfixe change-me, publiés
+// dans .env.example) sont refusés, par la même règle que pour oauthSecret :
+// des documents d'assurance derrière une clé publiée ne sont derrière rien.
+func (l *loader) storage(cfg *Config, env Environment) {
 	cfg.StorageBackend = l.storageBackend()
 	if cfg.StorageBackend != StorageS3 {
 		return
@@ -457,8 +481,8 @@ func (l *loader) storage(cfg *Config) {
 
 	cfg.S3Endpoint = l.requiredForS3(keyS3Endpoint)
 	cfg.S3Bucket = l.requiredForS3(keyS3Bucket)
-	cfg.S3AccessKey = l.requiredForS3(keyS3AccessKey)
-	cfg.S3SecretKey = l.requiredForS3(keyS3SecretKey)
+	cfg.S3AccessKey = l.s3Credential(keyS3AccessKey, env)
+	cfg.S3SecretKey = l.s3Credential(keyS3SecretKey, env)
 	cfg.S3Region = l.str(keyS3Region, "")
 	cfg.S3UseSSL = l.boolean(keyS3UseSSL, true)
 }
@@ -485,6 +509,20 @@ func (l *loader) requiredForS3(key string) string {
 	if !ok {
 		l.reject(key, fmt.Sprintf("variable obligatoire quand %s%s vaut %s", Prefix, keyStorageBackend, StorageS3))
 	}
+	return value
+}
+
+// s3Credential exige un identifiant S3 et, en production, refuse la valeur
+// d'exemple publiée dans le dépôt.
+func (l *loader) s3Credential(key string, env Environment) string {
+	value := l.requiredForS3(key)
+
+	if env == Production && strings.HasPrefix(value, placeholderPrefix) {
+		l.reject(key, fmt.Sprintf(
+			"la valeur d'exemple de .env.example est refusée en %s — utilisez les identifiants réels de votre service S3",
+			Production))
+	}
+
 	return value
 }
 
@@ -539,12 +577,14 @@ func (l *loader) logFormat(env Environment) LogFormat {
 	}
 }
 
-// mustParseURL n'est appelée que sur les constantes de ce fichier, dont
-// l'invalidité serait un bug de compilation-time déguisé.
-func mustParseURL(raw string) *url.URL {
-	parsed, err := url.Parse(raw)
+// defaultBaseURLParsed rend l'URL publique par défaut analysée. Elle ne sert
+// que de repli quand la valeur fournie est rejetée — le chargement échoue de
+// toute façon, mais la structure rendue reste utilisable par les messages
+// d'erreur. L'invalidité de la constante serait un bug de compilation déguisé.
+func defaultBaseURLParsed() *url.URL {
+	parsed, err := url.Parse(defaultBaseURL)
 	if err != nil {
-		panic(fmt.Sprintf("config : URL par défaut invalide %q : %v", raw, err))
+		panic(fmt.Sprintf("config : URL par défaut invalide %q : %v", defaultBaseURL, err))
 	}
 	return parsed
 }

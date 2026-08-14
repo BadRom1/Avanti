@@ -14,6 +14,12 @@ import (
 // quand la lecture ne trouve rien, et [ErrEmailTaken] quand l'unicité de
 // l'email est violée. Tout le reste des erreurs remonte tel quel et sera traité
 // comme une panne.
+//
+// Pas de garde optimiste sur [UserRepository.Update], et c'est assumé : les
+// écritures de comptes viennent de la CLI, mono-opérateur sur l'hôte, sur une
+// table de quelques lignes, et chaque opération (activer, désactiver, changer
+// le rôle ou l'empreinte) est idempotente ou triviale à rejouer — le protocole
+// « expected » des autres domaines n'achèterait ici aucune sûreté utile.
 type UserRepository interface {
 	// Create insère un compte.
 	Create(ctx context.Context, user User) error
@@ -217,24 +223,24 @@ func (s *AccountService) forAuthentication(ctx context.Context, email string) (U
 	return unknown, nil
 }
 
-// ChangePassword remplace le mot de passe d'un compte après vérification de
-// l'ancien.
+// ResetPassword remplace le mot de passe d'un compte SANS exiger l'ancien.
 //
-// L'ancien mot de passe est exigé même quand la personne est déjà connectée :
-// c'est ce qui empêche une session laissée ouverte sur un poste partagé de servir
-// à confisquer le compte.
-func (s *AccountService) ChangePassword(ctx context.Context, id ID, oldPassword, newPassword string) error {
+// C'est une opération d'administration : elle n'est appelée que par la CLI,
+// sur la machine qui héberge l'instance, et cet accès-là est la racine de
+// confiance du modèle — qui peut exécuter `avanti user` détient déjà la base
+// et la clé HMAC, exiger l'ancien mot de passe ne le retiendrait pas. Le mot
+// de passe perdu se répare donc ici (argon2id ne se retrouve pas). Le jour où
+// un changement de mot de passe EN LIGNE existera, il devra exiger l'ancien —
+// une session laissée ouverte sur un poste partagé ne doit pas suffire à
+// confisquer le compte — et ce sera une autre méthode.
+//
+// Le nouveau mot de passe suit la même politique qu'à la création
+// ([CheckPassword]) : la réinitialisation n'est pas une porte dérobée vers un
+// mot de passe faible.
+func (s *AccountService) ResetPassword(ctx context.Context, id ID, newPassword string) error {
 	user, err := s.repo.ByID(ctx, id)
 	if err != nil {
 		return err
-	}
-
-	matches, err := s.hasher.Verify(user.PasswordHash, oldPassword)
-	if err != nil {
-		return err
-	}
-	if !matches {
-		return ErrInvalidCredentials
 	}
 
 	if policyErr := CheckPassword(newPassword); policyErr != nil {
@@ -247,6 +253,32 @@ func (s *AccountService) ChangePassword(ctx context.Context, id ID, oldPassword,
 	}
 
 	user.PasswordHash = hash
+	user.UpdatedAt = s.clock().UTC()
+
+	return s.repo.Update(ctx, user)
+}
+
+// ChangeRole donne un autre rôle à un compte.
+//
+// L'effet est immédiat sur tous les canaux : le rôle est relu à chaque requête
+// web (le rôle ne vit pas en session) et les scopes d'un jeton MCP sont
+// recalculés à chaque vérification par intersection avec ceux du rôle courant
+// — une rétrogradation retire donc les droits sans attendre aucune expiration.
+// L'opération est idempotente : redonner son rôle à un compte ne change rien.
+func (s *AccountService) ChangeRole(ctx context.Context, id ID, role Role) error {
+	if !role.Known() {
+		return fmt.Errorf("%w : %q", ErrUnknownRole, role)
+	}
+
+	user, err := s.repo.ByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if user.Role == role {
+		return nil
+	}
+
+	user.Role = role
 	user.UpdatedAt = s.clock().UTC()
 
 	return s.repo.Update(ctx, user)

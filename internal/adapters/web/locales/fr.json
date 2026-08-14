@@ -203,6 +203,11 @@
   "document.rattachement.aucun": "Pièce libre",
   "document.rattachement.devis": "Devis de {{.Entreprise}}",
   "document.rattachement.devis_disparu": "Devis disparu",
+  "document.rattachement.facture": "Facture de {{.Entreprise}}",
+  "document.rattachement.facture_numerotee": "Facture {{.Numero}} de {{.Entreprise}}",
+  "document.rattachement.facture_disparue": "Facture disparue",
+  "document.rattachement.etape": "Étape {{.Nom}}",
+  "document.rattachement.etape_disparue": "Étape disparue",
   "document.rattachement.cible": "{{.Type}} {{.ID}}",
 
   "document.taille.octets": "{{.Valeur}} o",
@@ -222,6 +227,7 @@
   "document.erreur.cible_invalide": "Le rattachement de la pièce est incohérent.",
   "document.erreur.cible_devis_inconnue": "Le devis auquel rattacher cette pièce n'existe pas.",
   "document.erreur.cible_facture_inconnue": "La facture à laquelle rattacher cette pièce n'existe pas.",
+  "document.erreur.cible_etape_inconnue": "L'étape à laquelle rattacher cette pièce n'existe pas.",
   "document.erreur.televersement_invalide": "Le téléversement est illisible. Repassez par le formulaire de dépôt.",
 
   "finance.index.title": "Finances",

@@ -370,7 +370,7 @@ func TestAuthenticateRejectsUnreadableHash(t *testing.T) {
 	}
 }
 
-func TestChangePassword(t *testing.T) {
+func TestResetPassword(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t)
@@ -378,9 +378,11 @@ func TestChangePassword(t *testing.T) {
 
 	const newPassword = "une toute nouvelle phrase de passe"
 
+	// L'ancien mot de passe n'est PAS demandé : c'est une réinitialisation
+	// d'administration, celle du mot de passe perdu.
 	h.instant = frozenClock.Add(48 * time.Hour)
-	if err := h.service.ChangePassword(t.Context(), user.ID, validPassword, newPassword); err != nil {
-		t.Fatalf("ChangePassword() échoué : %v", err)
+	if err := h.service.ResetPassword(t.Context(), user.ID, newPassword); err != nil {
+		t.Fatalf("ResetPassword() échoué : %v", err)
 	}
 
 	if _, err := h.service.Authenticate(t.Context(), "romain@exemple.fr", newPassword); err != nil {
@@ -402,57 +404,109 @@ func TestChangePassword(t *testing.T) {
 	}
 }
 
-func TestChangePasswordRejects(t *testing.T) {
+// TestResetPasswordKeepsThePolicy : la réinitialisation suit la même politique
+// de robustesse que la création — pas de porte dérobée vers un mot de passe
+// faible — et un refus ne modifie rien.
+func TestResetPasswordKeepsThePolicy(t *testing.T) {
 	t.Parallel()
 
-	cases := []struct {
-		name        string
-		oldPassword string
-		newPassword string
-		want        error
-	}{
-		{
-			name: "ancien mot de passe faux", oldPassword: "pas le bon du tout", newPassword: "une nouvelle phrase de passe",
-			want: identity.ErrInvalidCredentials,
-		},
-		{
-			name: "ancien mot de passe vide", oldPassword: "", newPassword: "une nouvelle phrase de passe",
-			want: identity.ErrInvalidCredentials,
-		},
-		{
-			name: "nouveau mot de passe trop court", oldPassword: validPassword, newPassword: "trop court",
-			want: identity.ErrPasswordTooShort,
-		},
+	h := newHarness(t)
+	user := h.createAccount(t, "romain@exemple.fr", identity.RoleProprietaire)
+
+	if err := h.service.ResetPassword(t.Context(), user.ID, "trop court"); !errors.Is(err, identity.ErrPasswordTooShort) {
+		t.Fatalf("ResetPassword(trop court) = %v, attendu ErrPasswordTooShort", err)
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			h := newHarness(t)
-			user := h.createAccount(t, "romain@exemple.fr", identity.RoleProprietaire)
-
-			if err := h.service.ChangePassword(t.Context(), user.ID, tc.oldPassword, tc.newPassword); !errors.Is(err, tc.want) {
-				t.Fatalf("ChangePassword() = %v, attendu %v", err, tc.want)
-			}
-
-			// Le mot de passe d'origine doit toujours fonctionner : un changement
-			// refusé ne laisse pas le compte à moitié modifié.
-			if _, err := h.service.Authenticate(t.Context(), "romain@exemple.fr", validPassword); err != nil {
-				t.Errorf("un changement refusé a tout de même modifié le compte : %v", err)
-			}
-		})
+	// Le mot de passe d'origine doit toujours fonctionner : une
+	// réinitialisation refusée ne laisse pas le compte à moitié modifié.
+	if _, err := h.service.Authenticate(t.Context(), "romain@exemple.fr", validPassword); err != nil {
+		t.Errorf("une réinitialisation refusée a tout de même modifié le compte : %v", err)
 	}
 }
 
-func TestChangePasswordOnUnknownAccount(t *testing.T) {
+func TestResetPasswordOnUnknownAccount(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t)
 
-	err := h.service.ChangePassword(t.Context(), identity.ID("fantome"), validPassword, "une nouvelle phrase de passe")
+	err := h.service.ResetPassword(t.Context(), identity.ID("fantome"), "une nouvelle phrase de passe")
 	if !errors.Is(err, identity.ErrUnknownUser) {
-		t.Errorf("ChangePassword() = %v, attendu ErrUnknownUser", err)
+		t.Errorf("ResetPassword() = %v, attendu ErrUnknownUser", err)
+	}
+}
+
+func TestChangeRole(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+	user := h.createAccount(t, "romain@exemple.fr", identity.RoleCollaborateur)
+
+	h.instant = frozenClock.Add(48 * time.Hour)
+	if err := h.service.ChangeRole(t.Context(), user.ID, identity.RoleProprietaire); err != nil {
+		t.Fatalf("ChangeRole() échoué : %v", err)
+	}
+
+	after, err := h.service.ByID(t.Context(), user.ID)
+	if err != nil {
+		t.Fatalf("ByID() échoué : %v", err)
+	}
+	if after.Role != identity.RoleProprietaire {
+		t.Errorf("Role = %q, attendu %q", after.Role, identity.RoleProprietaire)
+	}
+	if !after.UpdatedAt.After(user.UpdatedAt) {
+		t.Errorf("UpdatedAt = %s, il devrait avoir avancé depuis %s", after.UpdatedAt, user.UpdatedAt)
+	}
+
+	// L'effet sur les droits est celui de la table des rôles : le nouveau rôle
+	// porte le scope mcp, l'ancien ne le portait pas.
+	actor, err := h.service.Authenticate(t.Context(), "romain@exemple.fr", validPassword)
+	if err != nil {
+		t.Fatalf("Authenticate() échoué : %v", err)
+	}
+	if !actor.Allows(identity.ScopeMCP) {
+		t.Error("le compte promu proprietaire doit porter le scope mcp")
+	}
+}
+
+// TestChangeRoleIsIdempotent : redonner son rôle à un compte ne change rien,
+// pas même la date de modification — il n'y a pas eu de modification.
+func TestChangeRoleIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+	user := h.createAccount(t, "romain@exemple.fr", identity.RoleProprietaire)
+
+	h.instant = frozenClock.Add(48 * time.Hour)
+	if err := h.service.ChangeRole(t.Context(), user.ID, identity.RoleProprietaire); err != nil {
+		t.Fatalf("ChangeRole(même rôle) échoué : %v", err)
+	}
+
+	after, err := h.service.ByID(t.Context(), user.ID)
+	if err != nil {
+		t.Fatalf("ByID() échoué : %v", err)
+	}
+	if !after.UpdatedAt.Equal(user.UpdatedAt) {
+		t.Errorf("UpdatedAt a bougé (%s → %s) alors que rien n'a changé", user.UpdatedAt, after.UpdatedAt)
+	}
+}
+
+func TestChangeRoleRejectsUnknownRole(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+	user := h.createAccount(t, "romain@exemple.fr", identity.RoleProprietaire)
+
+	err := h.service.ChangeRole(t.Context(), user.ID, identity.Role("administrateur"))
+	if !errors.Is(err, identity.ErrUnknownRole) {
+		t.Fatalf("ChangeRole(rôle inconnu) = %v, attendu ErrUnknownRole", err)
+	}
+
+	after, err := h.service.ByID(t.Context(), user.ID)
+	if err != nil {
+		t.Fatalf("ByID() échoué : %v", err)
+	}
+	if after.Role != identity.RoleProprietaire {
+		t.Errorf("Role = %q, un refus ne doit rien modifier", after.Role)
 	}
 }
 

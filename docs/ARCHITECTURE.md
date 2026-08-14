@@ -211,6 +211,12 @@ Un nom technique français est donc un écart à corriger, pas un choix de style
 une chaîne française visible de l'utilisateur ne se traduit pas en anglais sous
 prétexte d'uniformité.
 
+Une exception actée : les **chemins protocolaires** restent en anglais —
+`/oauth/*`, `/mcp`, `/.well-known/*`. Ce ne sont pas des adresses qu'un humain
+saisit mais des points de terminaison que des normes imposent (RFC 8414, 9728)
+ou que des logiciels construisent ; les franciser casserait la découverte sans
+servir personne.
+
 ### `devis` — la consultation des artisans
 
 Demandes de devis, propositions chiffrées reçues, comparaison des offres,
@@ -600,8 +606,13 @@ premier domaine métier, et valent pour la suite :
   échouer la suite. Seules les sondes `/healthz` et `/readyz` y échappent, parce
   que leur lecteur est un orchestrateur et non un humain.
 - **une route web est protégée par défaut.** L'intergiciel d'authentification
-  énumère les exceptions publiques — `/connexion` et `/static/` — et exige une
-  session partout ailleurs. C'est le sens de l'erreur qui décide de cette forme :
+  énumère les exceptions publiques et exige une session partout ailleurs. Ces
+  exceptions sont de trois familles : les pages et ressources humaines
+  (`/connexion`, `/static/`), les sondes d'exploitation (`/healthz`, `/readyz`),
+  et les points de terminaison machine de l'accès agent — les chemins OAuth
+  qu'aucun humain ne visite, les deux documents `/.well-known` et `/mcp`, qui
+  portent leur propre authentification (PKCE, Bearer — voir §5) plutôt qu'une
+  session. C'est le sens de l'erreur qui décide de cette forme :
   oublier d'inscrire une nouvelle route dans les exceptions la rend protégée, donc
   visible tout de suite ; oublier de poser un décorateur « protégé » sur une
   nouvelle route l'ouvrirait à tout le monde, en silence.

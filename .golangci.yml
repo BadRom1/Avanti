@@ -163,6 +163,8 @@ linters:
         # « démarrage » en « d » + « marrage ». Ne pas les « corriger » en mots
         # entiers — la forme tronquée est celle que misspell compare.
         - activit
+        # « initialise » est le fragment de « réinitialise » après le é.
+        - initialise
         - interm
         - journalis
         - marrage

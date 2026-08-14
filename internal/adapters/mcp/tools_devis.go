@@ -29,15 +29,14 @@ type demandeJSON struct {
 
 // devisJSON est un devis reçu, tel que les tools le rendent.
 type devisJSON struct {
-	ID              string   `json:"id" jsonschema:"identifiant du devis"`
-	DemandeID       string   `json:"demande_id" jsonschema:"identifiant de la demande à laquelle il répond"`
-	Entreprise      string   `json:"entreprise" jsonschema:"entreprise qui a chiffré"`
-	MontantCentimes int64    `json:"montant_centimes" jsonschema:"prix proposé, en centimes d'euro entiers"`
-	Statut          string   `json:"statut" jsonschema:"recu, retenu ou refuse"`
-	RecuLe          string   `json:"recu_le" jsonschema:"date de réception, AAAA-MM-JJ"`
-	ValideJusquau   string   `json:"valide_jusquau,omitempty" jsonschema:"expiration annoncée, vide si l'artisan n'a rien annoncé"`
-	Notes           string   `json:"notes,omitempty" jsonschema:"réserves ou précisions saisies avec le devis"`
-	DocumentIDs     []string `json:"document_ids,omitempty" jsonschema:"identifiants des pièces jointes du domaine document"`
+	ID              string `json:"id" jsonschema:"identifiant du devis"`
+	DemandeID       string `json:"demande_id" jsonschema:"identifiant de la demande à laquelle il répond"`
+	Entreprise      string `json:"entreprise" jsonschema:"entreprise qui a chiffré"`
+	MontantCentimes int64  `json:"montant_centimes" jsonschema:"prix proposé, en centimes d'euro entiers"`
+	Statut          string `json:"statut" jsonschema:"recu, retenu ou refuse"`
+	RecuLe          string `json:"recu_le" jsonschema:"date de réception, AAAA-MM-JJ"`
+	ValideJusquau   string `json:"valide_jusquau,omitempty" jsonschema:"expiration annoncée, vide si l'artisan n'a rien annoncé"`
+	Notes           string `json:"notes,omitempty" jsonschema:"réserves ou précisions saisies avec le devis"`
 }
 
 // comparaisonJSON est une demande et ses devis mis en regard.
@@ -179,7 +178,6 @@ func newDevisJSON(proposition devis.Devis) devisJSON {
 		Statut:          proposition.Statut.String(),
 		RecuLe:          formatDate(proposition.ReceivedAt),
 		Notes:           proposition.Notes,
-		DocumentIDs:     proposition.DocumentIDs,
 	}
 	if limit, known := proposition.ValidUntil(); known {
 		out.ValideJusquau = formatDate(limit)

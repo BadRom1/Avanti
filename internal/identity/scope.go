@@ -11,9 +11,11 @@ import "slices"
 // point d'appel.
 type Scope string
 
-// Les scopes reconnus. Lecture et écriture sont séparées parce que
-// l'architecte a besoin de voir les finances sans pouvoir les modifier, et que
-// la distinction sera aussi celle des jetons MCP.
+// Les scopes reconnus. Lecture et écriture sont séparées parce qu'un droit de
+// consulter n'implique pas celui de modifier — c'est la granularité qu'un
+// consentement OAuth affiche et qu'un jeton MCP porte — même si la table des
+// rôles (voir role.go) donne aujourd'hui les deux ensemble ou pas du tout :
+// un troisième profil pourra les dissocier sans toucher aux scopes.
 const (
 	// ScopeDevisRead autorise la consultation des devis et des offres.
 	ScopeDevisRead Scope = "devis:read"

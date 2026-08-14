@@ -13,6 +13,7 @@ import (
 	"github.com/Romain-Badino/Avanti/internal/document"
 	"github.com/Romain-Badino/Avanti/internal/finance"
 	"github.com/Romain-Badino/Avanti/internal/identity"
+	"github.com/Romain-Badino/Avanti/internal/planning"
 )
 
 // Chemins du domaine document. En français, comme toutes les URLs visibles
@@ -68,6 +69,8 @@ var (
 	// document ne connaît pas plus le domaine finance (R2), c'est ici que
 	// l'existence de la cible se vérifie.
 	errCibleFactureInconnue = errors.New("web : facture de rattachement inconnue")
+	// errCibleEtapeInconnue est le pendant pour une étape du planning.
+	errCibleEtapeInconnue = errors.New("web : étape de rattachement inconnue")
 )
 
 // documentErrorMessages traduit les erreurs métier en messages du catalogue.
@@ -91,6 +94,7 @@ var documentErrorMessages = []struct {
 	{errFichierManquant, "document.erreur.fichier_manquant"},
 	{errCibleDevisInconnue, "document.erreur.cible_devis_inconnue"},
 	{errCibleFactureInconnue, "document.erreur.cible_facture_inconnue"},
+	{errCibleEtapeInconnue, "document.erreur.cible_etape_inconnue"},
 }
 
 // documentMessageID rend l'identifiant de message correspondant à une erreur,
@@ -243,9 +247,41 @@ func (h *Handler) describeTarget(r *http.Request, target document.Target) (targe
 			label: h.translate(r, "document.rattachement.devis", "Entreprise", proposition.Artisan.Entreprise),
 			url:   demandePath(proposition.DemandeID),
 		}, nil
+	case document.TargetFacture:
+		facture, err := h.finance.Facture(r.Context(), finance.ID(target.ID))
+		if errors.Is(err, finance.ErrUnknownFacture) {
+			return targetView{label: h.translate(r, "document.rattachement.facture_disparue")}, nil
+		}
+		if err != nil {
+			return targetView{}, fmt.Errorf("résolution de la facture rattachée %s : %w", target.ID, err)
+		}
+		if facture.Numero != "" {
+			return targetView{
+				label: h.translate(r, "document.rattachement.facture_numerotee",
+					"Entreprise", facture.Entreprise, "Numero", facture.Numero),
+				url: financesPath,
+			}, nil
+		}
+		return targetView{
+			label: h.translate(r, "document.rattachement.facture", "Entreprise", facture.Entreprise),
+			url:   financesPath,
+		}, nil
+	case document.TargetEtape:
+		etape, err := h.planning.Etape(r.Context(), planning.ID(target.ID))
+		if errors.Is(err, planning.ErrUnknownEtape) {
+			return targetView{label: h.translate(r, "document.rattachement.etape_disparue")}, nil
+		}
+		if err != nil {
+			return targetView{}, fmt.Errorf("résolution de l'étape rattachée %s : %w", target.ID, err)
+		}
+		return targetView{
+			label: h.translate(r, "document.rattachement.etape", "Nom", etape.Name),
+			url:   planningPath,
+		}, nil
 	default:
-		// Les cibles facture et etape attendent leurs domaines : la pièce
-		// s'affiche avec sa cible nommée, sans lien à suivre.
+		// Un type de cible que le domaine reconnaîtrait mais que cette vue ne
+		// sait pas encore décrire : la pièce s'affiche avec sa cible nommée,
+		// sans lien à suivre — jamais une panne.
 		return targetView{label: h.translate(r, "document.rattachement.cible", "Type", target.Type.String(), "ID", target.ID)}, nil
 	}
 }
@@ -315,6 +351,9 @@ func (h *Handler) handleDocumentUpload(w http.ResponseWriter, r *http.Request) {
 		err = h.resolveCibleFacture(r, target)
 	}
 	if err == nil {
+		err = h.resolveCibleEtape(r, target)
+	}
+	if err == nil {
 		err = h.uploadFromRequest(r, target)
 	}
 	if err != nil {
@@ -323,14 +362,16 @@ func (h *Handler) handleDocumentUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Le dépôt rattaché à un devis ramène à la comparaison d'où il est parti,
-	// celui rattaché à une facture à la page des finances ; le dépôt libre, à
-	// la liste des pièces.
+	// celui rattaché à une facture à la page des finances, celui rattaché à
+	// une étape au planning ; le dépôt libre, à la liste des pièces.
 	destination := documentsPath
 	switch {
 	case proposition != nil:
 		destination = demandePath(proposition.DemandeID)
 	case target.Type == document.TargetFacture:
 		destination = financesPath
+	case target.Type == document.TargetEtape:
+		destination = planningPath
 	}
 	h.redirectAfterPost(w, r, destination+"?"+paramAvis+"="+avisDocumentAjoute)
 }
@@ -370,6 +411,25 @@ func (h *Handler) resolveCibleFacture(r *http.Request, target document.Target) e
 	}
 	if err != nil {
 		return fmt.Errorf("résolution de la facture de rattachement : %w", err)
+	}
+
+	return nil
+}
+
+// resolveCibleEtape vérifie, avant le dépôt, qu'un rattachement à une étape
+// désigne une étape qui existe — le miroir de [resolveCibleFacture] pour le
+// domaine planning. Sans rattachement d'étape, rend nil sans erreur.
+func (h *Handler) resolveCibleEtape(r *http.Request, target document.Target) error {
+	if target.Type != document.TargetEtape {
+		return nil
+	}
+
+	_, err := h.planning.Etape(r.Context(), planning.ID(target.ID))
+	if errors.Is(err, planning.ErrUnknownEtape) {
+		return fmt.Errorf("%w : %s", errCibleEtapeInconnue, target.ID)
+	}
+	if err != nil {
+		return fmt.Errorf("résolution de l'étape de rattachement : %w", err)
 	}
 
 	return nil

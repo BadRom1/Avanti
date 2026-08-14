@@ -24,7 +24,7 @@
 // suffisent à faire diverger une comparaison de ce que dit le papier.
 //
 // Frontières : ce package n'importe aucun autre domaine, aucun adapter, ni
-// internal/platform. L'acteur d'une action arrive en valeur ([ActeurID]) et les
-// pièces jointes sont désignées par identifiant ([Devis.DocumentIDs]), jamais
-// par un pointeur vers l'agrégat d'un autre domaine.
+// internal/platform. L'acteur d'une action arrive en valeur ([ActeurID]) et le
+// rattachement d'une pièce à un devis vit dans le domaine document (sa cible,
+// en référence faible) — jamais un pointeur vers l'agrégat d'un autre domaine.
 package devis

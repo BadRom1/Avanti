@@ -140,6 +140,82 @@ func TestUserDisableAndEnableRequireAnEmail(t *testing.T) {
 	}
 }
 
+func TestUserSetPasswordValidatesItsArguments(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sans email", func(t *testing.T) {
+		t.Parallel()
+
+		var stdout, stderr bytes.Buffer
+
+		err := run(t.Context(), []string{"user", "set-password", "--generate"}, &stdout, &stderr)
+		if err == nil {
+			t.Fatal("user set-password doit exiger --email")
+		}
+		if !strings.Contains(err.Error(), "--email") {
+			t.Errorf("erreur = %q, doit nommer le drapeau manquant", err.Error())
+		}
+	})
+
+	// La suite de tests n'a pas de terminal : sans --generate, la commande doit
+	// le dire et orienter, comme « add » — jamais lire le mot de passe en clair.
+	t.Run("sans terminal ni generate", func(t *testing.T) {
+		t.Parallel()
+
+		var stdout, stderr bytes.Buffer
+
+		err := run(t.Context(), []string{"user", "set-password", "--email", "romain@exemple.fr"}, &stdout, &stderr)
+		if err == nil {
+			t.Fatal("user set-password doit échouer sans terminal ni --generate")
+		}
+		if !strings.Contains(err.Error(), "--generate") {
+			t.Errorf("erreur = %q, doit orienter vers --generate", err.Error())
+		}
+	})
+}
+
+func TestUserSetRoleValidatesItsArguments(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "sans email",
+			args: []string{"user", "set-role", "--role", "proprietaire"},
+			want: "--email",
+		},
+		{
+			name: "sans rôle",
+			args: []string{"user", "set-role", "--email", "romain@exemple.fr"},
+			want: "--role",
+		},
+		{
+			name: "rôle inconnu",
+			args: []string{"user", "set-role", "--email", "romain@exemple.fr", "--role", "administrateur"},
+			want: "administrateur",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout, stderr bytes.Buffer
+
+			err := run(t.Context(), tc.args, &stdout, &stderr)
+			if err == nil {
+				t.Fatal("user set-role doit refuser ces arguments")
+			}
+			if !strings.Contains(err.Error()+stderr.String(), tc.want) {
+				t.Errorf("erreur = %q, stderr = %q — %q était attendu quelque part", err.Error(), stderr.String(), tc.want)
+			}
+		})
+	}
+}
+
 // TestUsageUserListsRoles : l'aide tire les rôles du domaine plutôt que de
 // les recopier, de sorte qu'un rôle ajouté apparaisse sans qu'on y pense.
 func TestUsageUserListsRoles(t *testing.T) {
@@ -148,7 +224,7 @@ func TestUsageUserListsRoles(t *testing.T) {
 	var help bytes.Buffer
 	usageUser(&help)
 
-	for _, want := range []string{"proprietaire", "collaborateur", "--generate", "disable"} {
+	for _, want := range []string{"proprietaire", "collaborateur", "--generate", "disable", "set-password", "set-role"} {
 		if !strings.Contains(help.String(), want) {
 			t.Errorf("l'aide de « user » ne mentionne pas %q", want)
 		}

@@ -16,10 +16,11 @@ le plus simple, ou le binaire nu face à un PostgreSQL administré à part. Les
 le dépôt. C'est tout — le binaire se construit dans l'image.
 
 **Chemin binaire** : Go (la version de la directive `go` de `go.mod`), `make`,
-`git`, et un PostgreSQL administré par vos soins (version 16 ou plus récente,
-c'est ce que les migrations exercent). Le binaire embarque ses migrations, ses
-gabarits, ses feuilles de style et son catalogue de traductions : une fois
-compilé, il se déplace seul.
+`git`, et un PostgreSQL administré par vos soins — **version 18**, c'est celle
+que le développement et la CI exercent ; une version antérieure récente est
+plausible mais non exercée. Le binaire embarque ses migrations, ses gabarits,
+ses feuilles de style et son catalogue de traductions : une fois compilé, il se
+déplace seul.
 
 Dans les deux cas : un nom de domaine pointant sur la machine, et de quoi
 terminer TLS devant l'application (étape 5). Une instance qui détient des
@@ -55,13 +56,18 @@ décrites une à une dans [.env.example](../.env.example). Copiez-le et ajustez 
 cp .env.example .env
 ```
 
-Quatre décisions comptent ; le reste a des valeurs par défaut raisonnables.
+Quatre décisions comptent ; le reste a des valeurs par défaut raisonnables. En
+particulier, laissez `AVANTI_LISTEN_ADDR` commentée : le défaut `:8080`
+convient partout — dans un conteneur, c'est la ligne `ports` du compose qui
+restreint l'exposition ; ne la renseignez (`127.0.0.1:8080`) que pour le
+binaire nu derrière un reverse proxy local.
 
 **`AVANTI_ENV=production`.** Ce réglage fait plus que passer les journaux en
 JSON : en production, la configuration **refuse les valeurs d'exemple**
-(préfixe `change-me`) publiées dans ce dépôt. Un secret oublié arrête le
-démarrage en nommant la variable fautive, au lieu de laisser tourner une
-instance dont la clé est publique.
+(préfixe `change-me`) publiées dans ce dépôt — la clé OAuth, le mot de passe
+PostgreSQL de la chaîne de connexion, les identifiants S3. Un secret oublié
+arrête le démarrage en nommant la variable fautive, au lieu de laisser tourner
+une instance dont la clé est publique.
 
 **`AVANTI_OAUTH_SECRET`.** La clé HMAC qui signe les codes d'autorisation et
 les jetons des agents IA. Engendrez-la une fois pour toutes :
@@ -78,7 +84,10 @@ tout révoquer (étape 7).
 `https://avanti.exemple.fr`. Elle sert aux liens absolus, à l'origine de
 confiance CSRF et à l'émetteur OAuth : une valeur fausse ne casse pas tout de
 suite, elle casse au premier agent qui compare l'émetteur annoncé à l'adresse
-qu'il a appelée.
+qu'il a appelée. Elle doit être la **racine d'un hôte, sans chemin** — les
+documents de découverte OAuth et MCP sont cherchés sous `/.well-known` à la
+racine, une instance sous préfixe serait introuvable ; le démarrage refuse un
+chemin, utilisez un sous-domaine.
 
 **Le stockage des documents.** Par défaut (`AVANTI_STORAGE_BACKEND=filesystem`),
 le contenu binaire des pièces va dans `AVANTI_DOCUMENTS_DIR`. Ce répertoire est
@@ -91,10 +100,12 @@ auquel cas c'est le seau qui se sauvegarde.
 
 **Avec Docker Compose** : le dépôt fournit
 [compose.production.yaml](../compose.production.yaml), un exemple commenté qui
-lève l'application et son PostgreSQL, lit tout du `.env` (y compris
-`POSTGRES_PASSWORD`), monte un volume nommé pour les documents et n'expose
-l'application que sur `127.0.0.1:8080` — le reverse proxy de l'étape 5 fait le
-reste. L'en-tête du fichier liste les variables minimales.
+lève l'application et son PostgreSQL. Le même `.env` sert aux deux : le service
+`avanti` le charge en entier (`env_file`), le service `postgres` n'en reçoit
+que `POSTGRES_PASSWORD` (interpolé — la clé OAuth n'a rien à faire dans son
+environnement). Un volume nommé porte les documents, et l'application n'est
+exposée que sur `127.0.0.1:8080` — le reverse proxy de l'étape 5 fait le
+reste. L'en-tête du fichier liste les lignes du `.env` à ajuster.
 
 ## 4. Premier démarrage et premiers comptes
 
@@ -125,6 +136,14 @@ Deux rôles existent : `proprietaire` (tout, accès agent IA compris) et
 `collaborateur` (devis et planning seulement, sans accès agent) — la table
 exacte est dans `docs/ARCHITECTURE.md` §4. `avanti user list` montre qui
 existe, `avanti user disable` ferme un accès sans rien supprimer.
+
+Cette CLI, exécutée sur l'hôte, est la **racine de confiance** de l'instance :
+tout ce qui touche aux comptes passe par elle. Un **mot de passe perdu** se
+répare par `avanti user set-password --email … [--generate]` (Avanti ne peut
+pas le retrouver, seule son empreinte argon2id est stockée) ; un **changement
+de rôle** par `avanti user set-role --email … --role proprietaire|collaborateur`,
+à effet immédiat — le rôle est relu à chaque requête, sessions ouvertes et
+jetons d'agent compris.
 
 Vérifiez ensuite que l'instance répond :
 

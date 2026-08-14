@@ -180,14 +180,13 @@ func TestRecordDevis(t *testing.T) {
 	demande := f.demande(t)
 
 	proposition, err := f.service.RecordDevis(t.Context(), devis.DevisInput{
-		DemandeID:   demande.ID,
-		Artisan:     devis.Artisan{Entreprise: " Charpentes du Val ", Email: "Contact@Val.fr"},
-		Montant:     1_250_000,
-		ReceivedAt:  instantReponse,
-		Validity:    30 * 24 * time.Hour,
-		Notes:       "  Pose sous quinze jours.  ",
-		DocumentIDs: []string{" doc-1 ", "doc-1", "", "doc-2"},
-		By:          acteur,
+		DemandeID:  demande.ID,
+		Artisan:    devis.Artisan{Entreprise: " Charpentes du Val ", Email: "Contact@Val.fr"},
+		Montant:    1_250_000,
+		ReceivedAt: instantReponse,
+		Validity:   30 * 24 * time.Hour,
+		Notes:      "  Pose sous quinze jours.  ",
+		By:         acteur,
 	})
 	if err != nil {
 		t.Fatalf("RecordDevis() échoué : %v", err)
@@ -204,27 +203,10 @@ func TestRecordDevis(t *testing.T) {
 		t.Errorf("Montant = %d, attendu 1250000", int64(proposition.Montant))
 	case proposition.Notes != "Pose sous quinze jours.":
 		t.Errorf("Notes = %q", proposition.Notes)
-	case !slices.Equal(proposition.DocumentIDs, []string{"doc-1", "doc-2"}):
-		t.Errorf("DocumentIDs = %v, attendu [doc-1 doc-2]", proposition.DocumentIDs)
 	case proposition.RecordedBy != acteur:
 		t.Errorf("RecordedBy = %q, attendu %q", proposition.RecordedBy, acteur)
 	case !proposition.DecidedAt.IsZero() || proposition.DecidedBy != "":
 		t.Errorf("un devis reçu ne porte aucune décision : %q, %s", proposition.DecidedBy, proposition.DecidedAt)
-	}
-}
-
-// TestRecordDevisWithoutDocuments : sans pièce jointe, la tranche est nil et non
-// une tranche vide — c'est ce que la base stockera, et un test qui l'ignore
-// laisse passer un aller-retour qui change la valeur.
-func TestRecordDevisWithoutDocuments(t *testing.T) {
-	t.Parallel()
-
-	f := newFixture(t)
-	demande := f.demande(t)
-
-	proposition := f.devisRecu(t, demande.ID, "Toiture Ain", 1_180_050)
-	if proposition.DocumentIDs != nil {
-		t.Errorf("DocumentIDs = %v, attendu nil", proposition.DocumentIDs)
 	}
 }
 
