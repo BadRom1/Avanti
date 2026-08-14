@@ -12,12 +12,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/alexedwards/scs/pgxstore"
 
+	"github.com/Romain-Badino/Avanti/internal/adapters/mcp"
 	"github.com/Romain-Badino/Avanti/internal/adapters/web"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/db"
@@ -140,6 +142,10 @@ func serve(ctx context.Context, stderr io.Writer) error {
 	// Le magasin OAuth suit le même principe que celui des sessions : il est
 	// choisi ici, et l'adapter web ne reçoit que les interfaces de fosite.
 	// C'est ce qui permet aux deux familles d'adapters de s'ignorer (R4).
+	//
+	// L'URL canonique du serveur MCP est définie par l'adapter mcp et transmise
+	// à l'adapter web pour le contrôle de l'indicateur de ressource (RFC 8707) :
+	// les deux familles ne s'importent pas, c'est ici que la valeur circule.
 	site, err := web.New(web.Options{
 		Logger:       app.logger,
 		Build:        app.build,
@@ -153,6 +159,25 @@ func serve(ctx context.Context, stderr io.Writer) error {
 		Planning:     app.planningService,
 		Exports:      newExports(),
 		OAuthSecret:  app.cfg.OAuthSecret,
+		MCPResource:  mcp.CanonicalServerURL(app.cfg.BaseURL),
+	})
+	if err != nil {
+		return err
+	}
+
+	// L'adapter MCP reçoit le vérificateur de jetons que l'adapter web expose
+	// par le port identity.TokenVerifier : c'est la seule jonction entre les
+	// deux familles, et elle se fait ici, dans cmd/avanti (R4) — l'adapter MCP
+	// ne sait pas que fosite existe.
+	agent, err := mcp.New(mcp.Options{
+		Logger:    app.logger,
+		Build:     app.build,
+		BaseURL:   app.cfg.BaseURL,
+		Verifier:  site.TokenVerifier(),
+		Devis:     app.devisService,
+		Documents: app.documentsService,
+		Finance:   app.financeService,
+		Planning:  app.planningService,
 	})
 	if err != nil {
 		return err
@@ -164,7 +189,7 @@ func serve(ctx context.Context, stderr io.Writer) error {
 	httpServer, err := server.New(server.Options{
 		Config:  app.cfg,
 		Logger:  app.logger,
-		Handler: site,
+		Handler: composeRoot(site, agent),
 		Ready:   func(ctx context.Context) error { return db.Ping(ctx, app.pool) },
 	})
 	if err != nil {
@@ -172,4 +197,23 @@ func serve(ctx context.Context, stderr io.Writer) error {
 	}
 
 	return httpServer.Run(ctx)
+}
+
+// composeRoot assemble le routage racine de l'instance : le point de
+// terminaison MCP et son document de découverte vers l'adapter mcp, tout le
+// reste vers l'adapter web.
+//
+// La composition vit ici parce que c'est cmd/avanti qui connaît les deux
+// familles (R4). Les chemins MCP sont des correspondances EXACTES : l'adapter
+// web garde son propre « tout le reste » — en-têtes de sécurité, page 404 — et
+// ne peut pas avaler le document RFC 9728, servi sans session ni CSRF comme
+// les métadonnées RFC 8414 qu'il jouxte sous /.well-known.
+func composeRoot(site *web.Handler, agent *mcp.Handler) http.Handler {
+	root := http.NewServeMux()
+	root.Handle(mcp.ServerPath, agent)
+	root.Handle(mcp.ProtectedResourceMetadataPath, agent)
+	root.Handle(mcp.ProtectedResourceMetadataPathMCP, agent)
+	root.Handle("/", site)
+
+	return root
 }

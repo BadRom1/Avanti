@@ -123,6 +123,9 @@ func pkcePair(t *testing.T) (verifier, challenge string) {
 }
 
 // authorizeQuery construit les paramètres d'une demande d'autorisation.
+//
+// L'indicateur de ressource est celui qu'un client MCP conforme envoie : l'URL
+// canonique du serveur MCP — la seule valeur que checkResource accepte.
 func authorizeQuery(client registeredClient, challenge, method, scope string) url.Values {
 	params := url.Values{
 		"response_type": {"code"},
@@ -130,6 +133,7 @@ func authorizeQuery(client registeredClient, challenge, method, scope string) ur
 		"redirect_uri":  {client.RedirectURI},
 		"scope":         {scope},
 		"state":         {stateTest},
+		"resource":      {baseURLTest + "/mcp"},
 	}
 	if challenge != "" {
 		params.Set("code_challenge", challenge)
@@ -561,6 +565,28 @@ func TestOAuthAuthorizeRejects(t *testing.T) {
 		{
 			name:         "ressource étrangère",
 			mutate:       func(p url.Values, _ registeredClient) { p.Set("resource", "https://ailleurs.example/mcp") },
+			wantError:    "invalid_target",
+			wantRedirect: true,
+		},
+		{
+			// L'instance nue ne suffit plus depuis que le serveur MCP existe :
+			// l'indicateur doit désigner sa ressource canonique, pas son hôte.
+			name:         "ressource = instance sans le chemin MCP",
+			mutate:       func(p url.Values, _ registeredClient) { p.Set("resource", baseURLTest) },
+			wantError:    "invalid_target",
+			wantRedirect: true,
+		},
+		{
+			name:         "ressource = autre chemin de l'instance",
+			mutate:       func(p url.Values, _ registeredClient) { p.Set("resource", baseURLTest+"/oauth/token") },
+			wantError:    "invalid_target",
+			wantRedirect: true,
+		},
+		{
+			// Un port réellement différent n'est pas une variation de forme :
+			// c'est un autre serveur.
+			name:         "ressource = port différent",
+			mutate:       func(p url.Values, _ registeredClient) { p.Set("resource", "http://avanti.test:8443/mcp") },
 			wantError:    "invalid_target",
 			wantRedirect: true,
 		},

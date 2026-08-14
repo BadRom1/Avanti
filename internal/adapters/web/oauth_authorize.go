@@ -51,7 +51,7 @@ const (
 // que fosite sait écrire.
 var errInvalidTarget = &fosite.RFC6749Error{
 	ErrorField:       "invalid_target",
-	DescriptionField: "La ressource demandée n'est pas servie par ce serveur d'autorisation.",
+	DescriptionField: "L'indicateur de ressource doit désigner l'URL canonique du serveur MCP de cette instance.",
 	CodeField:        http.StatusBadRequest,
 }
 
@@ -279,19 +279,27 @@ func (h *Handler) checkAuthorizeRequest(request fosite.AuthorizeRequester) error
 
 // checkResource contrôle l'indicateur de ressource de la RFC 8707.
 //
-// # Ce qui est fait, et ce qui ne l'est pas
-//
 // La spécification MCP demande au client d'envoyer « resource » à chaque
-// demande, pour que le jeton soit lié au serveur auquel il est destiné. Avanti
-// vérifie que la valeur désigne bien cette instance — c'est la protection contre
-// le « député confus », où un serveur MCP malveillant ferait émettre à son
-// profit un jeton valable ailleurs.
+// demande, pour que le jeton soit lié au serveur auquel il est destiné. La
+// seule valeur acceptée est l'URL CANONIQUE du serveur MCP de cette instance —
+// celle que le document Protected Resource Metadata (RFC 9728) annonce, et que
+// cmd/avanti transmet à la construction ([Options.MCPResource]). C'est la
+// protection contre le « député confus », où un serveur MCP malveillant ferait
+// émettre à son profit un jeton valable ailleurs — et elle est resserrée à la
+// ressource exacte, plus seulement à l'instance : désigner l'instance nue est
+// désormais refusé, un jeton d'Avanti ne vaut que pour son serveur MCP.
 //
-// Ce qui n'est pas fait : lier l'audience du jeton à l'URL canonique du serveur
-// MCP. Cette URL n'existera qu'avec le serveur MCP lui-même, et l'inventer
-// maintenant reviendrait à figer une valeur que le lot suivant devrait changer.
-// Tant qu'Avanti n'émet de jetons que pour lui-même, la vérification d'origine
-// couvre le même risque.
+// La comparaison tolère les seules variations de forme que la RFC 3986 déclare
+// équivalentes, plus une : schéma et hôte insensibles à la casse, port par
+// défaut du schéma (« :443 » en https, « :80 » en http) équivalent à son
+// absence, et barre finale du chemin acceptée — certains clients l'ajoutent.
+// Une requête ou un fragment dans la valeur la font refuser : la RFC 8707
+// interdit le fragment, et la forme canonique n'a pas de requête.
+//
+// L'absence du paramètre reste acceptée : la RFC 8707 le laisse facultatif, et
+// le refuser fermerait la porte aux clients OAuth qui ne le connaissent pas
+// sans rien protéger de plus — un jeton sans audience ne vaut que ce que ce
+// serveur en fait, et il ne le présente qu'à lui-même.
 func (h *Handler) checkResource(resource string) error {
 	if resource == "" {
 		return nil
@@ -302,16 +310,37 @@ func (h *Handler) checkResource(resource string) error {
 		return errInvalidTarget
 	}
 
-	issuer, err := url.Parse(h.oauth.issuer)
+	canonical, err := url.Parse(h.oauth.mcpResource)
 	if err != nil {
 		return errInvalidTarget
 	}
 
-	if !strings.EqualFold(parsed.Scheme, issuer.Scheme) || !strings.EqualFold(parsed.Host, issuer.Host) {
+	switch {
+	case !strings.EqualFold(parsed.Scheme, canonical.Scheme),
+		normalizedHost(parsed) != normalizedHost(canonical),
+		strings.TrimSuffix(parsed.Path, "/") != canonical.Path,
+		parsed.RawQuery != "",
+		parsed.Fragment != "" || parsed.RawFragment != "":
 		return errInvalidTarget
+	default:
+		return nil
 	}
+}
 
-	return nil
+// normalizedHost rend l'hôte d'une URL en minuscules, port par défaut du
+// schéma retiré : « avanti.test:443 » en https et « avanti.test » désignent le
+// même serveur (RFC 3986 §6.2.3).
+func normalizedHost(u *url.URL) string {
+	host := strings.ToLower(u.Host)
+
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return strings.TrimSuffix(host, ":443")
+	case "http":
+		return strings.TrimSuffix(host, ":80")
+	default:
+		return host
+	}
 }
 
 // grantableScopes répartit les scopes demandés entre ceux que le compte peut

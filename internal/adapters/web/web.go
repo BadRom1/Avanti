@@ -68,6 +68,14 @@ type Options struct {
 	// OAuthSecret est la clé HMAC qui signe codes et jetons. Obligatoire, et au
 	// moins [oauthSecretMinLength] octets.
 	OAuthSecret []byte
+	// MCPResource est l'URL canonique du serveur MCP de l'instance — la seule
+	// valeur que l'indicateur de ressource (RFC 8707) accepte à l'autorisation.
+	// Obligatoire, absolue.
+	//
+	// Elle arrive en valeur plutôt que d'être recalculée ici : sa définition
+	// vit dans l'adapter mcp, que cette famille n'a pas le droit d'importer —
+	// c'est cmd/avanti qui la calcule et la fait circuler (R4).
+	MCPResource string
 	// Devis porte les cas d'usage de la consultation des artisans. Obligatoire.
 	//
 	// Le service est construit par cmd/avanti sur le dépôt PostgreSQL : cet
@@ -144,7 +152,7 @@ func New(opts Options) (*Handler, error) {
 		return nil, err
 	}
 
-	oauth, err := newOAuthServer(opts.OAuthSecret, opts.OAuthStorage, opts.BaseURL, opts.Clock)
+	oauth, err := newOAuthServer(opts.OAuthSecret, opts.OAuthStorage, opts.BaseURL, opts.MCPResource, opts.Clock)
 	if err != nil {
 		return nil, err
 	}

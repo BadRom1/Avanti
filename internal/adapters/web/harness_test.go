@@ -216,6 +216,10 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 			"csv": csvExportStub{},
 			"pdf": pdfExportStub{},
 		},
+		// L'URL canonique du serveur MCP, écrite en clair comme les chemins
+		// OAuth : en production elle vient de l'adapter mcp via cmd/avanti,
+		// que cette famille n'importe pas (R4).
+		MCPResource: strings.TrimSuffix(raw, "/") + "/mcp",
 	})
 	if err != nil {
 		t.Fatalf("web.New() échoué : %v", err)
