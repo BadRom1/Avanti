@@ -59,9 +59,14 @@ Chaque lot de travail suit ce cycle, sans exception :
   `service postgresql start` puis créer la base et exporter la variable.
 - `make ci` = lint + tests (-race) + gosec/govulncheck + gitleaks. `make
   mutation` (Gremlins) est best-effort, hors CI.
+- `avanti seed demo --email <compte existant>` remplit une base de dev VIDE
+  d'un jeu de démonstration inter-domaines (refusé en production et dès que la
+  base a vécu) — pratique pour valider un parcours en réel.
 
 ## Comptes et données de dev
 
-La base de dev locale peut contenir un compte de test
-(`test-lead@avanti.local`). En production les comptes se créent par
-`avanti user add` (pas de page d'inscription, choix délibéré).
+Les comptes se créent par `avanti user add` (pas de page d'inscription, choix
+délibéré), en dev comme en production. Une base de dev locale peut donc
+contenir des comptes d'essai créés au fil des sessions (par exemple
+`test-lead@avanti.local`) : ce sont des artefacts locaux, rien dans le dépôt —
+code, migrations, seed — ne les crée ni ne les référence.

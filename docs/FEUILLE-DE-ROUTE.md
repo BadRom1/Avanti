@@ -67,19 +67,27 @@ Le rituel de travail par lot est décrit dans `CLAUDE.md` ; l'architecture dans
   argumentée (le Bearer défend seul, elle cassait le déploiement reverse
   proxy), flow complet OAuth → MCP testé contre PostgreSQL réel.
 
+- **Lot 10 — Packaging** (revue globale finale restante, voir « À faire ») :
+  Dockerfile multi-stage (binaire statique CGO_ENABLED=0, image distroless
+  non-root avec certificats CA, assets et migrations embarqués),
+  `compose.production.yaml` exemple commenté (app + PostgreSQL + volume
+  documents, zéro secret en dur), `docs/INSTALLATION.md` pas à pas (comptes,
+  secret OAuth, reverse proxy et ses réserves, branchement Claude via MCP,
+  sauvegardes), `avanti seed demo` (refus en production et sur base non
+  vierge, jeu cohérent inter-domaines via les services), nettoyage (aucun
+  TODO, aucun compte de test dans le dépôt), `make mutation` avec
+  renforcement des tests (document 100 %, devis 98,9 %, finance 98,7 %,
+  planning 89,6 %, identity 100 %), README/ARCHITECTURE/CLAUDE.md remis en
+  cohérence. Le build Docker n'a pas pu être exécuté dans l'environnement de
+  développement (Docker absent) : à valider au premier `docker build`.
+
 ## À faire
 
-### Lot 10 — Packaging et revue finale
+### Revue globale finale (reste du Lot 10)
 
-- Dockerfile multi-stage (binaire statique + assets embarqués), compose de
-  production exemple (app + Postgres + volume documents), docs d'installation
-  self-hosted pas à pas (créer les comptes, générer AVANTI_OAUTH_SECRET,
-  brancher Claude via MCP).
-- Seed de démonstration optionnel (`avanti seed --demo` ou équivalent).
-- Nettoyage : compte de test de la base dev, TODO restants, `make mutation`
-  sur les domaines et renforcement des tests les plus faibles.
-- Revue de code globale finale (sous-agent critique sur l'ensemble) et passe
-  de cohérence documentaire (README, ARCHITECTURE, ce fichier).
+- Revue de code globale finale (sous-agent critique sur l'ensemble du dépôt)
+  et corrections éventuelles — délibérément différée après le commit du
+  packaging, sur décision de Romain.
 
 ## Hors scope V1 (décisions de cadrage)
 
