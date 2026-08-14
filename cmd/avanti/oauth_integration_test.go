@@ -44,7 +44,9 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/Romain-Badino/Avanti/internal/adapters/postgres"
+	"github.com/Romain-Badino/Avanti/internal/adapters/storage"
 	"github.com/Romain-Badino/Avanti/internal/adapters/web"
+	"github.com/Romain-Badino/Avanti/internal/document"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/db"
@@ -237,11 +239,29 @@ func startAvanti(t *testing.T) *avantiInstance {
 		t.Fatalf("création du compte de test : %v", err)
 	}
 
-	// Le domaine des devis est monté comme en production : l'adapter web l'exige,
-	// et le bout-en-bout n'a d'intérêt que s'il assemble les mêmes pièces.
+	// Les domaines devis et document sont montés comme en production :
+	// l'adapter web les exige, et le bout-en-bout n'a d'intérêt que s'il
+	// assemble les mêmes pièces. Seul le stockage diffère — un répertoire
+	// jetable du test plutôt que celui de la configuration.
 	devisService, err := newDevisService(pool)
 	if err != nil {
 		t.Fatalf("newDevisService() échoué : %v", err)
+	}
+
+	documentRepo, err := postgres.NewDocumentRepo(pool)
+	if err != nil {
+		t.Fatalf("postgres.NewDocumentRepo() échoué : %v", err)
+	}
+	contentStorage, err := storage.NewFilesystem(t.TempDir())
+	if err != nil {
+		t.Fatalf("storage.NewFilesystem() échoué : %v", err)
+	}
+	documentsService, err := document.NewService(document.ServiceOptions{
+		Repo:    documentRepo,
+		Storage: contentStorage,
+	})
+	if err != nil {
+		t.Fatalf("document.NewService() échoué : %v", err)
 	}
 
 	sessionStore := pgxstore.NewWithCleanupInterval(pool, web.SessionCleanupInterval)
@@ -267,6 +287,7 @@ func startAvanti(t *testing.T) *avantiInstance {
 		OAuthStorage: oauthStore,
 		OAuthSecret:  []byte(e2eOAuthSecret),
 		Devis:        devisService,
+		Documents:    documentsService,
 	})
 	if err != nil {
 		t.Fatalf("web.New() échoué : %v", err)
@@ -422,21 +443,21 @@ func TestOAuthEndToEnd(t *testing.T) {
 		t.Fatalf("métadonnées : statut = %d, attendu 200 — corps : %s", metadata.Status, metadata.Body)
 	}
 
-	var document struct {
+	var discovery struct {
 		Issuer                string   `json:"issuer"`
 		RegistrationEndpoint  string   `json:"registration_endpoint"`
 		AuthorizationEndpoint string   `json:"authorization_endpoint"`
 		TokenEndpoint         string   `json:"token_endpoint"`
 		ChallengeMethods      []string `json:"code_challenge_methods_supported"`
 	}
-	if err := json.Unmarshal([]byte(metadata.Body), &document); err != nil {
+	if err := json.Unmarshal([]byte(metadata.Body), &discovery); err != nil {
 		t.Fatalf("métadonnées illisibles : %v — corps : %s", err, metadata.Body)
 	}
-	if document.Issuer != app.server.URL {
-		t.Errorf("issuer = %q, attendu %q", document.Issuer, app.server.URL)
+	if discovery.Issuer != app.server.URL {
+		t.Errorf("issuer = %q, attendu %q", discovery.Issuer, app.server.URL)
 	}
-	if len(document.ChallengeMethods) != 1 || document.ChallengeMethods[0] != "S256" {
-		t.Fatalf("code_challenge_methods_supported = %v, attendu [S256]", document.ChallengeMethods)
+	if len(discovery.ChallengeMethods) != 1 || discovery.ChallengeMethods[0] != "S256" {
+		t.Fatalf("code_challenge_methods_supported = %v, attendu [S256]", discovery.ChallengeMethods)
 	}
 
 	// 2. Enregistrement dynamique, sans aucun compte.

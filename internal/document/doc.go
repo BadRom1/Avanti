@@ -3,11 +3,11 @@
 // d'assurance. Il gère les métadonnées, le classement et le rattachement de
 // chaque pièce à ce qu'elle justifie.
 //
-// Contenu attendu : les entités et invariants du domaine, les ports (dépôt de
-// métadonnées, stockage du contenu binaire, calcul d'empreinte) et les services
-// applicatifs. Le contenu des fichiers n'est jamais porté par le domaine : il
-// est confié à un port de stockage dont l'implémentation vit dans
-// internal/adapters/storage.
+// Le contenu des fichiers n'est jamais porté par le domaine : il est confié au
+// port [Storage], dont les implémentations vivent dans
+// internal/adapters/storage — c'est le point d'extension officiel du projet
+// (docs/ARCHITECTURE.md §3). Les métadonnées, elles, passent par le port
+// [Repository].
 //
 // Frontières : ce package n'importe aucun autre domaine, aucun adapter, ni
 // internal/platform. Le rattachement d'une pièce à un Devis, une Facture ou une

@@ -84,7 +84,7 @@ var navBlueprint = []struct {
 	{href: devisPath, messageID: "nav.devis", scope: identity.ScopeDevisRead, available: true},
 	{href: "/planning", messageID: "nav.planning", scope: identity.ScopePlanningRead, available: false},
 	{href: "/finances", messageID: "nav.finance", scope: identity.ScopeFinanceRead, available: false},
-	{href: "/documents", messageID: "nav.documents", scope: identity.ScopeDocumentRead, available: false},
+	{href: documentsPath, messageID: "nav.documents", scope: identity.ScopeDocumentRead, available: true},
 }
 
 // newView construit le contexte de rendu d'une requête.

@@ -24,6 +24,7 @@ import (
 
 	"github.com/Romain-Badino/Avanti/internal/adapters/web"
 	"github.com/Romain-Badino/Avanti/internal/devis"
+	"github.com/Romain-Badino/Avanti/internal/document"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
 	"github.com/Romain-Badino/Avanti/internal/platform/logging"
@@ -110,11 +111,13 @@ const oauthSecretTest = "cle-hmac-de-test-sans-aucun-usage-reel"
 // site est le gestionnaire web sous test, avec ce qu'il faut pour agir sur son
 // état — désactiver un compte, par exemple.
 type site struct {
-	handler  *web.Handler
-	accounts *identity.AccountService
-	repo     *memRepo
-	oauth    *memOAuthStore
-	devis    *memDevisRepo
+	handler   *web.Handler
+	accounts  *identity.AccountService
+	repo      *memRepo
+	oauth     *memOAuthStore
+	devis     *memDevisRepo
+	documents *memDocumentRepo
+	storage   *memDocumentStorage
 }
 
 // newSite monte l'adapter avec trois comptes : un propriétaire, un
@@ -171,6 +174,16 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 		t.Fatalf("devis.NewService() échoué : %v", err)
 	}
 
+	documentRepo := newMemDocumentRepo()
+	documentStorage := newMemDocumentStorage()
+	documentsService, err := document.NewService(document.ServiceOptions{
+		Repo:    documentRepo,
+		Storage: documentStorage,
+	})
+	if err != nil {
+		t.Fatalf("document.NewService() échoué : %v", err)
+	}
+
 	handler, err := web.New(web.Options{
 		Logger:       logging.Discard(),
 		Build:        platform.BuildInfo{Version: "v0.0.0-test"},
@@ -180,12 +193,21 @@ func newSiteWithBaseURL(t *testing.T, raw string) *site {
 		OAuthStorage: oauthStore,
 		OAuthSecret:  []byte(oauthSecretTest),
 		Devis:        devisService,
+		Documents:    documentsService,
 	})
 	if err != nil {
 		t.Fatalf("web.New() échoué : %v", err)
 	}
 
-	return &site{handler: handler, accounts: accounts, repo: repo, oauth: oauthStore, devis: devisRepo}
+	return &site{
+		handler:   handler,
+		accounts:  accounts,
+		repo:      repo,
+		oauth:     oauthStore,
+		devis:     devisRepo,
+		documents: documentRepo,
+		storage:   documentStorage,
+	}
 }
 
 // disable ferme le compte portant cet email.

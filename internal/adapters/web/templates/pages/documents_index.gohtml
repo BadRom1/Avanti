@@ -1,0 +1,110 @@
+{{- /*
+La liste des pièces du dossier, de la plus récente à la plus ancienne, et le
+formulaire de téléversement.
+
+Le formulaire n'apparaît que pour qui détient document:write. Ce n'est pas la
+sécurité — la route est gardée côté serveur — c'est la cohérence : annoncer une
+action qui répondra « accès refusé » serait une promesse en l'air. Le
+téléchargement, lui, est offert à qui voit la page : la garde document:read est
+la même des deux côtés.
+*/ -}}
+{{ define "title" }}{{ .T "document.index.title" }}{{ end }}
+
+{{ define "content" }}
+{{- $d := .Data }}
+<h1>{{ .T "document.index.heading" }}</h1>
+<p class="lede">{{ .T "document.index.intro" }}</p>
+
+{{- if $d.Avis.Message }}
+<p class="avis {{ if $d.Avis.Erreur }}avis--erreur{{ else }}avis--succes{{ end }}"
+   role="{{ if $d.Avis.Erreur }}alert{{ else }}status{{ end }}">{{ $d.Avis.Message }}</p>
+{{- end }}
+
+{{- if not $d.Documents }}
+<section class="card">
+    <p>{{ .T "document.index.vide" }}</p>
+</section>
+{{- else }}
+<section class="card card--large" aria-labelledby="titre-pieces">
+    <h2 id="titre-pieces">{{ .T "document.index.tableau_heading" }}</h2>
+    <div class="tableau-defilant">
+        <table class="tableau">
+            <caption class="sr-only">{{ .T "document.index.legende" }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{ .T "document.champ.nom" }}</th>
+                    <th scope="col">{{ .T "document.champ.categorie" }}</th>
+                    <th scope="col" class="tableau__nombre">{{ .T "document.champ.taille" }}</th>
+                    <th scope="col">{{ .T "document.champ.depose_le" }}</th>
+                    <th scope="col">{{ .T "document.champ.rattachement" }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{- range $d.Documents }}
+                <tr>
+                    <th scope="row">
+                        <a href="{{ .TelechargerURL }}" download>{{ .Nom }}</a>
+                        {{- if .Description }}<span class="devis__notes">{{ .Description }}</span>{{ end }}
+                    </th>
+                    <td>{{ .Categorie }}</td>
+                    <td class="tableau__nombre">{{ .Taille }}</td>
+                    <td>{{ .DeposeeLe }}</td>
+                    <td>
+                        {{- if .RattachementURL }}
+                        <a href="{{ .RattachementURL }}">{{ .Rattachement }}</a>
+                        {{- else if .Rattachement }}
+                        {{ .Rattachement }}
+                        {{- else }}
+                        <span class="devis__vide">{{ $.T "document.rattachement.aucun" }}</span>
+                        {{- end }}
+                    </td>
+                </tr>
+                {{- end }}
+            </tbody>
+        </table>
+    </div>
+</section>
+{{- end }}
+
+{{- if .Can "document:write" }}
+<section class="card" aria-labelledby="titre-televerser">
+    <h2 id="titre-televerser">{{ .T "document.televerser.heading" }}</h2>
+
+    {{- if $d.Form.Error }}
+    <p class="avis avis--erreur" role="alert">{{ $d.Form.Error }}</p>
+    {{- end }}
+
+    <form class="formulaire" method="post" action="{{ $d.Form.Action }}" enctype="multipart/form-data">
+        {{- if $d.Form.CibleType }}
+        <input type="hidden" name="cible_type" value="{{ $d.Form.CibleType }}">
+        <input type="hidden" name="cible_id" value="{{ $d.Form.CibleID }}">
+        {{- end }}
+
+        <div class="champ">
+            <label for="fichier">{{ .T "document.champ.fichier" }}</label>
+            <input id="fichier" name="fichier" type="file"
+                   accept="application/pdf,image/jpeg,image/png,image/webp" required>
+            <p class="note">{{ .T "document.champ.fichier_aide" }}</p>
+        </div>
+
+        <div class="champ">
+            <label for="categorie">{{ .T "document.champ.categorie" }}</label>
+            <select id="categorie" name="categorie" required>
+                {{- range $d.Form.Categories }}
+                <option value="{{ .Value }}" {{ if .Selected }}selected{{ end }}>{{ .Label }}</option>
+                {{- end }}
+            </select>
+        </div>
+
+        <div class="champ">
+            <label for="description">{{ .T "document.champ.description" }}</label>
+            <textarea id="description" name="description" rows="3">{{ $d.Form.Description }}</textarea>
+        </div>
+
+        <div class="actions">
+            <button class="button" type="submit">{{ .T "document.televerser.soumettre" }}</button>
+        </div>
+    </form>
+</section>
+{{- end }}
+{{ end }}
