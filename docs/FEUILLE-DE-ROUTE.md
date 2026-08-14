@@ -53,25 +53,21 @@ Le rituel de travail par lot est décrit dans `CLAUDE.md` ; l'architecture dans
   démarrer » (candidates à la parallélisation), référence faible optionnelle
   vers un devis retenu, scopes planning:read/write.
 
+- **Lot 9 — Serveur MCP** : adapter `internal/adapters/mcp` sur le SDK Go
+  officiel (v1.7.0), transport HTTP streamable sans état monté par cmd/avanti
+  à côté du web, authentification par jetons OAuth via le seul port
+  `identity.TokenVerifier` (401/403 RFC 6750 avec WWW-Authenticate), Protected
+  Resource Metadata RFC 9728 servi à ses deux URLs (racine et forme avec
+  chemin), `checkResource` RFC 8707 resserré sur l'URL canonique `/mcp`
+  (l'instance nue est refusée, ports par défaut normalisés, resource rejouée
+  au point de terminaison des jetons), 14 tools français bornés par scopes
+  (consultation des quatre domaines, écriture devis/facture/acompte/étapes,
+  `assurance_preparer_envoi` avec avertissement explicite — aucun envoi,
+  aucun port MailSender), protection localhost du SDK désactivée par décision
+  argumentée (le Bearer défend seul, elle cassait le déploiement reverse
+  proxy), flow complet OAuth → MCP testé contre PostgreSQL réel.
+
 ## À faire
-
-### Lot 9 — Serveur MCP
-
-- Adapter `internal/adapters/mcp` avec le SDK Go officiel
-  (github.com/modelcontextprotocol/go-sdk — vérifier la version et la spec
-  d'autorisation MCP courante sur modelcontextprotocol.io).
-- Transport HTTP (streamable) monté sur le serveur existant, authentifié par
-  les jetons OAuth du lot 4b via le port `identity.TokenVerifier` ; publier le
-  Protected Resource Metadata (RFC 9728) pointant vers l'AS embarqué ;
-  resserrer `checkResource` (RFC 8707) sur l'URL canonique du serveur MCP
-  (limitation documentée dans oauth_authorize.go).
-- Tools par domaine, bornés par les scopes du jeton : consultation
-  (finances, planning, devis, documents), écriture (enregistrer un devis reçu,
-  une facture/dépense, avancer une étape), préparation d'un envoi assurance.
-- **Toute action d'envoi (mail, transmission) = préparation + confirmation
-  explicite** ; l'envoi de mail effectif n'est PAS dans ce lot (pas de port
-  MailSender branché en V1 sans décision de Romain).
-- Tests : flow complet jeton OAuth → tool MCP autorisé/refusé par scope.
 
 ### Lot 10 — Packaging et revue finale
 

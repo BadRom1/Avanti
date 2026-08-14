@@ -31,6 +31,17 @@ func (h *Handler) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RFC 8707 : la spécification MCP demande au client d'envoyer « resource »
+	// à la demande de jeton aussi. Le contrôle est celui de l'autorisation —
+	// une valeur présente doit désigner l'URL canonique du serveur MCP,
+	// l'absence reste tolérée. Il passe APRÈS NewAccessRequest : le formulaire
+	// est déjà analysé, et les refus du protocole (client, code, PKCE) gardent
+	// la priorité sur celui-ci.
+	if resourceErr := h.checkResource(r.PostFormValue(paramResource)); resourceErr != nil {
+		h.oauth.provider.WriteAccessError(ctx, w, request, resourceErr)
+		return
+	}
+
 	response, err := h.oauth.provider.NewAccessResponse(ctx, request)
 	if err != nil {
 		h.oauth.provider.WriteAccessError(ctx, w, request, err)

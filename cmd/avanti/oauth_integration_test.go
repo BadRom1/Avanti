@@ -43,9 +43,11 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/Romain-Badino/Avanti/internal/adapters/mcp"
 	"github.com/Romain-Badino/Avanti/internal/adapters/postgres"
 	"github.com/Romain-Badino/Avanti/internal/adapters/storage"
 	"github.com/Romain-Badino/Avanti/internal/adapters/web"
+	"github.com/Romain-Badino/Avanti/internal/devis"
 	"github.com/Romain-Badino/Avanti/internal/document"
 	"github.com/Romain-Badino/Avanti/internal/identity"
 	"github.com/Romain-Badino/Avanti/internal/platform"
@@ -198,13 +200,17 @@ func replaceDatabase(t *testing.T, dsn, base string) string {
 }
 
 // avantiInstance est une instance d'Avanti servie sur un port éphémère, montée
-// exactement comme le fait la commande serve.
+// exactement comme le fait la commande serve — adapter MCP et routage racine
+// compris.
 type avantiInstance struct {
 	server   *httptest.Server
 	site     *web.Handler
 	accounts *identity.AccountService
 	client   *http.Client
 	owner    identity.User
+	// devisService sert à semer et vérifier les données que les tools MCP
+	// lisent et écrivent.
+	devisService *devis.Service
 	// pool sert aux assertions que les réponses HTTP ne permettent pas : ce qui
 	// reste réellement en base après une course, par exemple.
 	pool *pgxpool.Pool
@@ -301,12 +307,30 @@ func startAvanti(t *testing.T) *avantiInstance {
 		Finance:      financeService,
 		Planning:     planningService,
 		Exports:      newExports(),
+		MCPResource:  mcp.CanonicalServerURL(baseURL),
 	})
 	if err != nil {
 		t.Fatalf("web.New() échoué : %v", err)
 	}
 
-	server.Config.Handler = site
+	// L'adapter MCP est monté comme en production : le vérificateur de jetons
+	// vient de l'adapter web par le port du domaine, et le routage racine est
+	// celui de la commande serve.
+	agent, err := mcp.New(mcp.Options{
+		Logger:    logging.Discard(),
+		Build:     platform.BuildInfo{Version: "v0.0.0-e2e"},
+		BaseURL:   baseURL,
+		Verifier:  site.TokenVerifier(),
+		Devis:     devisService,
+		Documents: documentsService,
+		Finance:   financeService,
+		Planning:  planningService,
+	})
+	if err != nil {
+		t.Fatalf("mcp.New() échoué : %v", err)
+	}
+
+	server.Config.Handler = composeRoot(site, agent)
 	server.Start()
 	t.Cleanup(server.Close)
 
@@ -316,11 +340,12 @@ func startAvanti(t *testing.T) *avantiInstance {
 	}
 
 	return &avantiInstance{
-		server:   server,
-		site:     site,
-		accounts: accounts,
-		owner:    owner,
-		pool:     pool,
+		server:       server,
+		site:         site,
+		accounts:     accounts,
+		owner:        owner,
+		devisService: devisService,
+		pool:         pool,
 		client: &http.Client{
 			Jar: jar,
 			// Les redirections ne sont pas suivies : leur cible fait partie de ce que
@@ -521,6 +546,23 @@ func TestOAuthEndToEnd(t *testing.T) {
 	})
 	if login.Status != http.StatusSeeOther {
 		t.Fatalf("connexion : statut = %d, attendu 303 — corps : %s", login.Status, login.Body)
+	}
+
+	// 4b. RFC 8707 resserrée : l'indicateur de ressource doit désigner l'URL
+	//     canonique du serveur MCP — l'instance nue ne suffit plus.
+	badResource := url.Values{}
+	for key, values := range params {
+		badResource[key] = values
+	}
+	badResource.Set("resource", app.server.URL)
+	refused := app.get(t, "/oauth/authorize?"+badResource.Encode())
+	if refused.Status != http.StatusSeeOther {
+		t.Fatalf("ressource = instance nue : statut = %d, attendu une erreur redirigée — corps : %s",
+			refused.Status, refused.Body)
+	}
+	if target, parseErr := url.Parse(refused.Location); parseErr != nil ||
+		target.Query().Get("error") != "invalid_target" {
+		t.Fatalf("ressource = instance nue : redirection %q, attendu error=invalid_target", refused.Location)
 	}
 
 	// 5. Page de consentement.

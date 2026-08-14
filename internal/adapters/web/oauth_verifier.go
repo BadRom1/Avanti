@@ -14,8 +14,8 @@ import (
 // d'autorisation.
 //
 // C'est le seul point où l'adapter web est consommé par un autre adapter, et il
-// est délibérément étroit : le futur serveur MCP reçoit une interface du
-// domaine, et n'apprend jamais que fosite existe (R4 de docs/ARCHITECTURE.md).
+// est délibérément étroit : le serveur MCP reçoit une interface du domaine, et
+// n'apprend jamais que fosite existe (R4 de docs/ARCHITECTURE.md).
 type oauthVerifier struct {
 	provider fosite.OAuth2Provider
 	accounts *identity.AccountService

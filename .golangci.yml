@@ -101,6 +101,8 @@ linters:
         - absolue
         - accumule
         - analyse
+        - architecte
+        - centre
         - attribue
         - attributs
         - catalogue
@@ -118,6 +120,7 @@ linters:
         - demande
         - demandes
         - existantes
+        - factorise
         - portait
         - distincte
         - enveloppe
@@ -135,6 +138,7 @@ linters:
         - pointeur
         - programme
         - recommandation
+        - recommande
         - respecte
         - restauration
         - substitue
@@ -297,7 +301,7 @@ linters:
             - github.com/alexedwards/argon2id
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
-              desc: "un domaine n'importe rien d'autre du dépôt (R1) — identity expose des comptes et des scopes, la mécanique OAuth 2.1 vit dans adapters/mcp, la config et le logger arrivent en paramètres de construction"
+              desc: "un domaine n'importe rien d'autre du dépôt (R1) — identity expose des comptes et des scopes, la mécanique OAuth 2.1 vit dans adapters/web, la config et le logger arrivent en paramètres de construction"
 
         # --- Socle technique : bibliothèque standard et lui-même (R3)
         #
@@ -462,6 +466,15 @@ linters:
             - github.com/Romain-Badino/Avanti/internal/identity
             - github.com/Romain-Badino/Avanti/internal/planning
             - github.com/Romain-Badino/Avanti/internal/platform
+            # go-sdk : le SDK MCP officiel (docs/ARCHITECTURE.md §6). C'est ici
+            # qu'il sert, et ici seulement : le serveur MCP est une surface de
+            # transport, exactement comme fosite est celle de l'adapter web.
+            # Trois sous-paquets entrent : mcp (serveur, tools, transport HTTP
+            # streamable), auth (vérification du Bearer, RFC 6750/9728) et
+            # oauthex (le document Protected Resource Metadata). L'identité, elle,
+            # arrive par le port identity.TokenVerifier — cet adapter ne sait pas
+            # que fosite existe, et aucun domaine ne voit le vocabulaire MCP.
+            - github.com/modelcontextprotocol/go-sdk
           deny:
             - pkg: "github.com/Romain-Badino/Avanti/"
               desc: "un adapter ne connaît que les domaines, internal/platform et sa propre famille (R4) — une famille d'adapters n'en importe pas une autre, leur seul point de rencontre est cmd/avanti"

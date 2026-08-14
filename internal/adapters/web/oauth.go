@@ -153,6 +153,12 @@ type oauthServer struct {
 	// octet par octet : elle ne se recalcule nulle part ailleurs.
 	issuer string
 
+	// mcpResource est l'URL canonique du serveur MCP — la seule valeur que
+	// l'indicateur de ressource (RFC 8707) accepte, voir checkResource. Elle
+	// arrive de cmd/avanti, qui la calcule auprès de l'adapter mcp : les deux
+	// familles ne s'importent pas, la valeur circule (R4).
+	mcpResource string
+
 	limiter *registrationLimiter
 	clock   func() time.Time
 }
@@ -162,12 +168,15 @@ type oauthServer struct {
 // Le *fosite.Config est construit une fois et confié à compose, qui y accumule
 // ses gestionnaires : le réutiliser pour un second fournisseur les
 // dupliquerait. Il ne sort donc pas de cette fonction.
-func newOAuthServer(secret []byte, storage OAuthStorage, baseURL *url.URL, clock func() time.Time) (*oauthServer, error) {
+func newOAuthServer(secret []byte, storage OAuthStorage, baseURL *url.URL, mcpResource string, clock func() time.Time) (*oauthServer, error) {
 	if storage == nil {
 		return nil, errors.New("web : magasin OAuth manquant")
 	}
 	if len(secret) < oauthSecretMinLength {
 		return nil, errors.New("web : clé HMAC OAuth trop courte")
+	}
+	if parsed, err := url.Parse(mcpResource); err != nil || !parsed.IsAbs() {
+		return nil, errors.New("web : URL canonique du serveur MCP manquante ou relative")
 	}
 	if clock == nil {
 		clock = time.Now
@@ -228,11 +237,12 @@ func newOAuthServer(secret []byte, storage OAuthStorage, baseURL *url.URL, clock
 	)
 
 	return &oauthServer{
-		provider: provider,
-		storage:  storage,
-		issuer:   issuer,
-		limiter:  newRegistrationLimiter(clock),
-		clock:    clock,
+		provider:    provider,
+		storage:     storage,
+		issuer:      issuer,
+		mcpResource: mcpResource,
+		limiter:     newRegistrationLimiter(clock),
+		clock:       clock,
 	}, nil
 }
 
@@ -300,8 +310,8 @@ func setOAuthCORS(header http.Header) {
 
 // TokenVerifier rend le vérificateur de jetons de l'instance.
 //
-// C'est par lui que le futur adapter MCP obtiendra l'identité de son appelant,
-// et c'est cmd/avanti qui fera la jonction : l'adapter MCP recevra un
+// C'est par lui que l'adapter MCP obtient l'identité de son appelant, et c'est
+// cmd/avanti qui fait la jonction : l'adapter MCP reçoit un
 // [identity.TokenVerifier], sans jamais savoir que fosite existe.
 func (h *Handler) TokenVerifier() identity.TokenVerifier {
 	return &oauthVerifier{provider: h.oauth.provider, accounts: h.accounts}

@@ -268,10 +268,11 @@ la clé de R1 :
   ne puisse s'ajouter un scope en chemin. Son unique question utile est
   `Allows(scope)`.
 
-Les domaines métier recevront donc `identity.Actor` **en paramètre** de leurs cas
+Les domaines métier reçoivent donc `identity.Actor` **en paramètre** de leurs cas
 d'usage. Ils n'importent pas `identity` pour autant : c'est l'adapter appelant —
-web aujourd'hui, MCP demain — qui obtient l'acteur et le transmet. Un service de
-devis reste ainsi testable sans base de comptes, et R1 tient sans exception.
+web par la session, MCP par le jeton — qui obtient l'acteur et le transmet. Un
+service de devis reste ainsi testable sans base de comptes, et R1 tient sans
+exception.
 
 Les scopes sont des constantes typées de la forme `<domaine>:read` et
 `<domaine>:write` pour les quatre domaines métier, plus un scope `mcp` distinct :
@@ -328,9 +329,10 @@ que le reste : une instance auto-hébergée qui exigerait un fournisseur d'ident
 tiers ajouterait un service à surveiller, un compte à créer et une panne de plus,
 pour deux personnes et une poignée d'agents.
 
-Le serveur MCP lui-même viendra plus tard ; l'autorisation, elle, est écrite,
-testée et branchée. L'ordre est voulu : ce qui décide de qui peut faire quoi n'a
-rien à gagner à être écrit dans l'élan d'un lot fonctionnel.
+L'autorisation a été écrite, testée et branchée avant le serveur MCP lui-même,
+qui existe désormais (`internal/adapters/mcp`). L'ordre était voulu : ce qui
+décide de qui peut faire quoi n'a rien à gagner à être écrit dans l'élan d'un
+lot fonctionnel.
 
 ### Le flux, et ce qu'il exclut
 
@@ -363,11 +365,16 @@ humain n'ait consenti à rien.
   déclare aussi le paramètre `iss` (RFC 9207), que la réponse d'autorisation
   porte : un client conforme détecte ainsi un code venu d'un autre serveur que
   celui qu'il croit interroger.
-- **L'indicateur de ressource (RFC 8707) est vérifié** : la valeur envoyée doit
-  désigner cette instance. C'est la protection contre le « député confus », où un
-  serveur MCP malveillant ferait émettre à son profit un jeton valable ailleurs.
-  Ce qui n'est pas fait, et qui viendra avec le serveur MCP : lier l'audience du
-  jeton à l'URL canonique de ce serveur, qui n'existe pas encore.
+- **L'indicateur de ressource (RFC 8707) est vérifié, et resserré** : la seule
+  valeur acceptée est l'URL canonique du serveur MCP de l'instance
+  (`<BaseURL>/mcp`) — celle que le document Protected Resource Metadata
+  (RFC 9728) publie sur `/.well-known/oauth-protected-resource`. C'est la
+  protection contre le « député confus », où un serveur MCP malveillant ferait
+  émettre à son profit un jeton valable ailleurs. Désigner l'instance nue,
+  accepté tant que le serveur MCP n'existait pas, est désormais refusé ;
+  l'absence du paramètre reste tolérée, la RFC le laissant facultatif. L'URL
+  canonique est définie dans l'adapter mcp et transmise à l'adapter web par
+  cmd/avanti (R4).
 
 L'enregistrement ouvert tient par des bornes, toutes constantes du code : un
 plafond de clients par instance, une longueur maximale pour le nom affiché, un
@@ -398,15 +405,16 @@ frontières, pas celui du hasard :
 | `internal/identity` | le port `TokenVerifier`, les scopes et la table des rôles |
 | `internal/adapters/web` | les points de terminaison, la page de consentement, le document de métadonnées, l'implémentation du port |
 | `internal/adapters/postgres` | le magasin exigé par la bibliothèque : clients, codes, jetons |
-| `cmd/avanti` | l'assemblage, et le ménage périodique des enregistrements expirés |
+| `internal/adapters/mcp` | le serveur de ressources : vérification du Bearer, document RFC 9728, tools bornés par les scopes du jeton |
+| `cmd/avanti` | l'assemblage — dont l'injection du vérificateur dans l'adapter mcp — et le ménage périodique des enregistrements expirés |
 
 Trois conséquences de R1 et R4 valent d'être écrites, parce qu'elles se
 paraphrasent mal :
 
 - **le domaine ne voit d'OAuth que `identity.TokenVerifier`** : une interface d'une
-  méthode, qui rend un `Actor` à partir d'un jeton. C'est par elle que le futur
-  adapter MCP obtiendra l'identité de son appelant, sans jamais apprendre que
-  fosite existe ;
+  méthode, qui rend un `Actor` à partir d'un jeton. C'est par elle que l'adapter
+  MCP obtient l'identité de son appelant, sans jamais apprendre que fosite
+  existe ;
 - **l'interface du magasin est déclarée dans `adapters/web`, pas dans le
   domaine.** Ses méthodes sont celles de la bibliothèque, mot pour mot : les
   redéclarer dans `identity` y ferait entrer le vocabulaire d'une dépendance
@@ -570,11 +578,11 @@ bloquer une fusion.
 
 ## 8. Ce que ce document n'engage pas encore
 
-Le socle applicatif et les cinq domaines existent — `internal/platform`,
-`internal/identity`, `internal/devis`, `internal/document`,
-`internal/finance`, `internal/planning`, `adapters/postgres`,
-`adapters/storage`, `adapters/export`, `adapters/web` et `cmd/avanti` sont
-écrits et testés ; seul l'adapter `mcp` reste à venir. Les règles
+Le socle applicatif, les cinq domaines et toutes les familles d'adapters
+existent — `internal/platform`, `internal/identity`, `internal/devis`,
+`internal/document`, `internal/finance`, `internal/planning`,
+`adapters/postgres`, `adapters/storage`, `adapters/export`, `adapters/web`,
+`adapters/mcp` et `cmd/avanti` sont écrits et testés. Les règles
 ci-dessus ont donc été écrites avant le code qu'elles gouvernent, et c'est
 délibéré : le harnais qui les applique était vert avant la première ligne de
 socle, ce qui fait qu'aucun code n'a pu les enfreindre par accident en chemin.
