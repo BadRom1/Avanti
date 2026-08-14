@@ -81,13 +81,26 @@ Le rituel de travail par lot est décrit dans `CLAUDE.md` ; l'architecture dans
   cohérence. Le build Docker n'a pas pu être exécuté dans l'environnement de
   développement (Docker absent) : à valider au premier `docker build`.
 
+- **Revue globale finale** (clôture du Lot 10) : relecture transversale de
+  l'ensemble — aucun bloquant. Corrections apportées : garde du seed étendue
+  aux six sources de données métier, `.env.example`/compose/INSTALLATION
+  réconciliés (AVANTI_LISTEN_ADDR commentée), refus des valeurs d'exemple
+  `change-me` étendu en production au mot de passe de la base et aux clés S3,
+  administration des comptes complétée (`avanti user set-password` en
+  réinitialisation administrateur, `avanti user set-role` — la CLI sur l'hôte
+  est la racine de confiance), tools MCP financiers testés (couverture mcp
+  79,6 %), migration 00011 (bornes SQL du domaine devis, suppression du
+  mécanisme mort `document_ids` remplacé par le rattachement inverse), cible
+  `etape` vérifiée au dépôt de pièce et rattachements affichés avec liens,
+  `AVANTI_BASE_URL` sans chemin exigée au démarrage (découverte OAuth/MCP à
+  la racine), moindre exposition du `.env` dans compose, cohérences
+  documentaires actées (ARCHITECTURE §4/§8, INSTALLATION).
+
 ## À faire
 
-### Revue globale finale (reste du Lot 10)
-
-- Revue de code globale finale (sous-agent critique sur l'ensemble du dépôt)
-  et corrections éventuelles — délibérément différée après le commit du
-  packaging, sur décision de Romain.
+La V1 est complète. Les ajustements se feront à l'usage — premières décisions
+en attente d'un vrai besoin : pagination, politique de rétention des
+documents, rôle intermédiaire éventuel.
 
 ## Hors scope V1 (décisions de cadrage)
 

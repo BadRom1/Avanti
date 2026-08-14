@@ -236,7 +236,6 @@ func TestDevisRoundTrip(t *testing.T) {
 	// arrondi s'est glissé dans la traduction vers INTERVAL.
 	proposition.Validity = 30*24*time.Hour + 90*time.Minute
 	proposition.Notes = "Pose sous quinze jours."
-	proposition.DocumentIDs = []string{"doc-1", "doc-2"}
 
 	if err := repo.CreateDevis(t.Context(), proposition); err != nil {
 		t.Fatalf("CreateDevis() échoué : %v", err)
@@ -258,8 +257,6 @@ func TestDevisRoundTrip(t *testing.T) {
 		t.Errorf("Artisan = %+v, attendu %+v", stored.Artisan, proposition.Artisan)
 	case stored.Notes != proposition.Notes:
 		t.Errorf("Notes = %q", stored.Notes)
-	case len(stored.DocumentIDs) != 2 || stored.DocumentIDs[0] != "doc-1":
-		t.Errorf("DocumentIDs = %v", stored.DocumentIDs)
 	case stored.RecordedBy != acteur:
 		t.Errorf("RecordedBy = %q, attendu %q", stored.RecordedBy, acteur)
 	case stored.DecidedBy != "" || !stored.DecidedAt.IsZero():

@@ -138,7 +138,18 @@ avanti user add --email architecte@exemple.fr --nom "Amélie Dupré" \
 avanti user list                                    # qui existe, avec quel rôle
 avanti user disable --email architecte@exemple.fr   # ferme l'accès
 avanti user enable  --email architecte@exemple.fr   # le rouvre
+
+# Mot de passe perdu : réinitialisation par l'hôte, sans l'ancien mot de passe.
+avanti user set-password --email vous@exemple.fr --generate
+
+# Changement de rôle, à effet immédiat (le rôle est relu à chaque requête).
+avanti user set-role --email architecte@exemple.fr --role proprietaire
 ```
+
+La CLI sur la machine hôte est la **racine de confiance** de l'instance : pas
+de page d'inscription, pas de réinitialisation en ligne — qui peut exécuter
+`avanti user` détient déjà la base, et c'est là, et là seulement, que les
+comptes s'administrent.
 
 Les sous-commandes `user` lisent la même configuration que `avanti serve` et
 appliquent les migrations manquantes si `AVANTI_MIGRATE_ON_START` le permet : le
@@ -159,8 +170,8 @@ lui sont pas affichées.
 
 Le seul critère imposé au mot de passe est sa **longueur : douze caractères au
 minimum**, sans aucune règle de composition. Les mots de passe sont hachés en
-argon2id ; Avanti ne peut donc pas retrouver un mot de passe perdu, il faut en
-créer un nouveau.
+argon2id ; Avanti ne peut donc pas retrouver un mot de passe perdu — `avanti
+user set-password` en pose un nouveau, avec les mêmes règles qu'à la création.
 
 Un compte n'est jamais supprimé. `user disable` ferme l'accès et **coupe les
 sessions web déjà ouvertes** sur ce compte, sans attendre leur expiration ; les

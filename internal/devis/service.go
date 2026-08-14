@@ -178,8 +178,6 @@ type DevisInput struct {
 	Validity time.Duration
 	// Notes porte ce que le devis ne dit pas. Facultatives.
 	Notes string
-	// DocumentIDs désigne les pièces jointes, par identifiant faible.
-	DocumentIDs []string
 	// By est l'acteur qui saisit le devis. Obligatoire.
 	By ActeurID
 }
@@ -246,18 +244,17 @@ func (s *Service) buildDevis(in DevisInput) (Devis, error) {
 	now := s.clock().UTC()
 
 	return Devis{
-		ID:          id,
-		DemandeID:   in.DemandeID,
-		Artisan:     artisan,
-		Montant:     in.Montant,
-		ReceivedAt:  in.ReceivedAt.UTC(),
-		Validity:    in.Validity,
-		Notes:       notes,
-		Statut:      StatutRecu,
-		DocumentIDs: normalizeDocumentIDs(in.DocumentIDs),
-		RecordedBy:  in.By,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:         id,
+		DemandeID:  in.DemandeID,
+		Artisan:    artisan,
+		Montant:    in.Montant,
+		ReceivedAt: in.ReceivedAt.UTC(),
+		Validity:   in.Validity,
+		Notes:      notes,
+		Statut:     StatutRecu,
+		RecordedBy: in.By,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}, nil
 }
 
@@ -276,37 +273,6 @@ func checkDevisValues(in DevisInput) error {
 	default:
 		return nil
 	}
-}
-
-// normalizeDocumentIDs nettoie les références de pièces jointes : blancs
-// retirés, entrées vides et doublons écartés.
-//
-// Le domaine ne vérifie pas que ces identifiants désignent quelque chose : il ne
-// connaît pas le domaine document, et c'est exactement ce que R2 de
-// docs/ARCHITECTURE.md demande. Une pièce supprimée laisse donc une référence
-// morte, que l'interface traitera comme telle.
-func normalizeDocumentIDs(raw []string) []string {
-	ids := make([]string, 0, len(raw))
-	seen := make(map[string]struct{}, len(raw))
-
-	for _, candidate := range raw {
-		id := strings.TrimSpace(candidate)
-		if id == "" {
-			continue
-		}
-		if _, duplicate := seen[id]; duplicate {
-			continue
-		}
-		seen[id] = struct{}{}
-
-		ids = append(ids, id)
-	}
-
-	if len(ids) == 0 {
-		return nil
-	}
-
-	return ids
 }
 
 // Demandes renvoie toutes les consultations.

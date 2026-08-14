@@ -102,13 +102,6 @@ type Devis struct {
 	Notes string
 	// Statut est l'état du devis dans la comparaison.
 	Statut Statut
-	// DocumentIDs désigne les pièces jointes — le PDF du devis, ses annexes.
-	//
-	// Ce sont des identifiants du domaine document, transportés en simples
-	// chaînes : R2 de docs/ARCHITECTURE.md interdit d'importer ce domaine pour
-	// en obtenir le type. Le lien est donc faible par construction, et le
-	// domaine devis n'a aucun moyen de savoir si la pièce existe encore.
-	DocumentIDs []string
 	// RecordedBy est l'acteur qui a saisi le devis.
 	RecordedBy ActeurID
 	// DecidedBy est l'acteur qui l'a tranché, vide tant qu'il ne l'est pas.

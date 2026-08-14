@@ -105,14 +105,12 @@ func seedDemo(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 		return fmt.Errorf("seed demo : compte %q introuvable — créez-le d'abord avec « avanti user add » : %w", *email, err)
 	}
 
-	// Une seule demande de devis suffit à dire que la base a vécu : le seed
+	// La moindre donnée métier suffit à dire que la base a vécu : le seed
 	// remplit une instance vide, il ne se mélange jamais à de vraies données.
-	demandes, err := app.devisService.Demandes(ctx)
-	if err != nil {
-		return err
-	}
-	if len(demandes) > 0 {
-		return fmt.Errorf("seed demo : la base contient déjà %d demande(s) de devis — le seed ne tourne que sur une instance vide", len(demandes))
+	// Les quatre domaines sont interrogés, pas seulement les devis — une base
+	// qui ne contient qu'une facture hors devis a vécu aussi.
+	if emptyErr := checkEmptyInstance(ctx, app); emptyErr != nil {
+		return emptyErr
 	}
 
 	out := &sink{w: stdout}
@@ -125,6 +123,54 @@ func seedDemo(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 
 	out.printf("\nJeu de démonstration créé. Connectez-vous avec le compte %s pour le parcourir.\n", user.Email)
 	return out.err
+}
+
+// checkEmptyInstance refuse le seed dès que la base contient une donnée
+// métier, quel qu'en soit le domaine, en nommant ce qui a été trouvé. Six
+// lectures — le prix d'un garde-fou qui tient la promesse de l'aide : « il
+// remplit une instance vide, il ne complète jamais une instance vécue ».
+func checkEmptyInstance(ctx context.Context, app *instance) error {
+	checks := []struct {
+		label string
+		count func(context.Context) (int, error)
+	}{
+		{"demande(s) de devis", func(ctx context.Context) (int, error) {
+			return lenOf(app.devisService.Demandes(ctx))
+		}},
+		{"facture(s)", func(ctx context.Context) (int, error) {
+			return lenOf(app.financeService.Factures(ctx))
+		}},
+		{"acompte(s)", func(ctx context.Context) (int, error) {
+			return lenOf(app.financeService.Acomptes(ctx))
+		}},
+		{"étape(s)", func(ctx context.Context) (int, error) {
+			return lenOf(app.planningService.Etapes(ctx))
+		}},
+		{"jalon(s)", func(ctx context.Context) (int, error) {
+			return lenOf(app.planningService.Jalons(ctx))
+		}},
+		{"document(s)", func(ctx context.Context) (int, error) {
+			return lenOf(app.documentsService.Documents(ctx))
+		}},
+	}
+
+	for _, check := range checks {
+		found, err := check.count(ctx)
+		if err != nil {
+			return err
+		}
+		if found > 0 {
+			return fmt.Errorf("seed demo : la base contient déjà %d %s — le seed ne tourne que sur une instance vide", found, check.label)
+		}
+	}
+
+	return nil
+}
+
+// lenOf rend la longueur d'une liste de domaine avec son erreur de lecture,
+// pour que checkEmptyInstance traite les six domaines d'un même geste.
+func lenOf[T any](items []T, err error) (int, error) {
+	return len(items), err
 }
 
 // demoSeed porte le contexte commun aux étapes du seed : l'instance, l'acteur

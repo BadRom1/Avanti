@@ -10,8 +10,8 @@
 #     --email vous@exemple.fr --nom "Votre Nom" --role proprietaire --generate
 #
 # AUCUN secret n'est écrit ici : tout vient d'un fichier .env voisin (jamais
-# commité — .gitignore l'exclut), que la directive env_file charge dans les
-# deux services. Il doit définir au minimum :
+# commité — .gitignore l'exclut). Partez de `cp .env.example .env`, puis
+# ajustez les lignes suivantes pour un déploiement compose :
 #
 #   AVANTI_ENV=production
 #   AVANTI_BASE_URL=https://avanti.exemple.fr        # l'URL publique réelle
@@ -19,18 +19,19 @@
 #   AVANTI_OAUTH_SECRET=<openssl rand -base64 32>
 #   POSTGRES_PASSWORD=<le même mot de passe que dans AVANTI_DATABASE_URL>
 #
-# NE PAS reprendre AVANTI_LISTEN_ADDR=127.0.0.1:8080 de .env.example : dans un
-# conteneur, la boucle locale n'est pas joignable depuis l'hôte et le port
-# publié resterait muet. Laisser la variable absente — le défaut :8080 écoute
-# sur toutes les interfaces DU CONTENEUR, et c'est la ligne ports ci-dessous
-# qui restreint l'exposition à la boucle locale de l'hôte.
+# AVANTI_LISTEN_ADDR reste ABSENTE (elle est commentée dans .env.example, ne la
+# décommentez pas ici) : le défaut :8080 écoute sur toutes les interfaces DU
+# CONTENEUR — une écoute sur sa boucle locale rendrait le port publié muet — et
+# c'est la ligne ports ci-dessous qui restreint l'exposition à la boucle locale
+# de l'hôte.
 #
-# En production, la configuration refuse les valeurs d'exemple `change-me` :
-# un secret oublié arrête le démarrage en le nommant, plutôt que de tourner
-# avec une clé publiée dans le dépôt. `postgres` dans l'URL de base de données
-# est le nom du service ci-dessous : les deux conteneurs partagent le réseau
-# du projet, et sslmode=disable est acceptable sur ce lien local — la base
-# n'est pas publiée hors de l'hôte.
+# En production, la configuration refuse les valeurs d'exemple `change-me`
+# (clé OAuth, mot de passe PostgreSQL, identifiants S3) : un secret oublié
+# arrête le démarrage en le nommant, plutôt que de tourner avec une valeur
+# publiée dans le dépôt. `postgres` dans l'URL de base de données est le nom du
+# service ci-dessous : les deux conteneurs partagent le réseau du projet, et
+# sslmode=disable est acceptable sur ce lien local — la base n'est pas publiée
+# hors de l'hôte.
 
 name: avanti
 
@@ -71,10 +72,12 @@ services:
     # se décide (dump puis restauration), elle n'arrive pas par un pull.
     image: postgres:18-alpine
     restart: unless-stopped
-    # POSTGRES_PASSWORD arrive par le même .env que le reste : un secret
-    # n'apparaît jamais dans ce fichier.
-    env_file: .env
     environment:
+      # Moindre exposition : la base ne reçoit QUE son mot de passe, pas tout
+      # le .env — la clé OAuth ou des identifiants S3 n'ont rien à faire dans
+      # l'environnement d'un conteneur qui ne s'en sert pas. ${…} est
+      # interpolé par compose depuis le .env à la racine du projet.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_USER: avanti
       POSTGRES_DB: avanti
       # Encodage et collation figés, comme en développement : sans cela, la

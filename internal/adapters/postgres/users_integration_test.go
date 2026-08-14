@@ -359,8 +359,8 @@ func TestRepoServiceEndToEnd(t *testing.T) {
 	}
 
 	const updated = "une toute autre phrase de passe"
-	if err := service.ChangePassword(t.Context(), created.ID, password, updated); err != nil {
-		t.Fatalf("ChangePassword() échoué : %v", err)
+	if err := service.ResetPassword(t.Context(), created.ID, updated); err != nil {
+		t.Fatalf("ResetPassword() échoué : %v", err)
 	}
 	if _, err := service.Authenticate(t.Context(), "romain@exemple.fr", updated); err != nil {
 		t.Errorf("le nouveau mot de passe est refusé : %v", err)
