@@ -328,16 +328,65 @@ type retenuInfo struct {
 	montant devis.Montant
 }
 
+// financeReads est le prologue de lecture que la page des finances et l'export
+// du dossier d'assurance partagent : les mêmes sources, les mêmes enveloppes
+// d'erreur, assemblées une seule fois (voir [Handler.loadFinances]).
+type financeReads struct {
+	// retenus sont les devis retenus, avec leur libellé et leur montant engagé.
+	retenus []retenuInfo
+	// factures et acomptes sont les pièces du domaine finance.
+	factures []finance.Facture
+	acomptes []finance.Acompte
+	// totaux sont les cumuls déduits des pièces ci-dessus, sans relecture.
+	totaux finance.Totaux
+	// engage est le cumul des montants engagés des devis retenus.
+	engage devis.Montant
+}
+
+// loadFinances lit ce que la page et l'export ont tous deux besoin de savoir,
+// en deux lectures financières au lieu de quatre : les factures et les acomptes
+// sont lus une fois, et les cumuls s'en déduisent par [finance.ComputeTotaux]
+// plutôt que par un Totaux qui referait les mêmes deux lectures.
+//
+// retenus, quand il n'est pas nil, est celui que l'appelant tient déjà — le
+// réaffichage d'un formulaire refusé l'a lu pour rebâtir son sélecteur, et le
+// relire ici ferait deux comparaisons complètes par requête.
+func (h *Handler) loadFinances(ctx context.Context, retenus []retenuInfo) (financeReads, error) {
+	reads := financeReads{retenus: retenus}
+
+	var err error
+	if reads.retenus == nil {
+		if reads.retenus, err = h.devisRetenus(ctx); err != nil {
+			return financeReads{}, fmt.Errorf("lecture des devis retenus : %w", err)
+		}
+	}
+
+	if reads.factures, err = h.finance.Factures(ctx); err != nil {
+		return financeReads{}, fmt.Errorf("lecture des factures : %w", err)
+	}
+	if reads.acomptes, err = h.finance.Acomptes(ctx); err != nil {
+		return financeReads{}, fmt.Errorf("lecture des acomptes : %w", err)
+	}
+
+	reads.totaux = finance.ComputeTotaux(reads.factures, reads.acomptes)
+	for _, retenu := range reads.retenus {
+		reads.engage += retenu.montant
+	}
+
+	return reads, nil
+}
+
 // handleFinanceIndex sert la page des finances : synthèse, factures, acomptes
 // et formulaires.
 func (h *Handler) handleFinanceIndex(w http.ResponseWriter, r *http.Request) {
-	h.renderFinanceIndex(w, r, http.StatusOK, nil, nil, "")
+	h.renderFinanceIndex(w, r, http.StatusOK, nil, nil, "", nil)
 }
 
 // renderFinanceIndex assemble et rend la page, avec les formulaires dans
 // l'état où l'appelant les donne — nil pour un formulaire vierge — et,
 // lorsqu'une action vient d'être refusée, le message du refus en avis
-// d'erreur (refusal vide sinon : l'avis vient alors de l'URL).
+// d'erreur (refusal vide sinon : l'avis vient alors de l'URL). retenus est
+// celui que l'appelant a déjà lu, ou nil pour le laisser lire ici.
 //
 // C'est l'assemblage transverse que R2 prévoit : le domaine devis donne les
 // lots retenus et leurs montants engagés, le domaine finance ses pièces et ses
@@ -345,28 +394,11 @@ func (h *Handler) handleFinanceIndex(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) renderFinanceIndex(
 	w http.ResponseWriter, r *http.Request, status int,
 	factureForm *factureFormData, acompteForm *acompteFormData, refusal string,
+	retenus []retenuInfo,
 ) {
-	retenus, err := h.devisRetenus(r.Context())
+	reads, err := h.loadFinances(r.Context(), retenus)
 	if err != nil {
-		h.failFinance(w, r, fmt.Errorf("lecture des devis retenus : %w", err))
-		return
-	}
-
-	totaux, err := h.finance.Totaux(r.Context())
-	if err != nil {
-		h.failFinance(w, r, fmt.Errorf("lecture des totaux financiers : %w", err))
-		return
-	}
-
-	factures, err := h.finance.Factures(r.Context())
-	if err != nil {
-		h.failFinance(w, r, fmt.Errorf("lecture des factures : %w", err))
-		return
-	}
-
-	acomptes, err := h.finance.Acomptes(r.Context())
-	if err != nil {
-		h.failFinance(w, r, fmt.Errorf("lecture des acomptes : %w", err))
+		h.failPage(w, r, err)
 		return
 	}
 
@@ -375,16 +407,16 @@ func (h *Handler) renderFinanceIndex(
 		avis = avisView{Message: refusal, Erreur: true}
 	}
 
-	factureRows, err := h.newFactureRows(r, factures, retenus)
+	factureRows, err := h.newFactureRows(r, reads.factures, reads.retenus)
 	if err != nil {
-		h.failFinance(w, r, fmt.Errorf("lecture des justificatifs des factures : %w", err))
+		h.failPage(w, r, err)
 		return
 	}
 
 	data := financeIndexData{
-		Synthese: h.newSynthese(r, retenus, totaux),
+		Synthese: h.newSynthese(r, reads),
 		Factures: factureRows,
-		Acomptes: h.newAcompteRows(r, acomptes, retenus),
+		Acomptes: h.newAcompteRows(r, reads.acomptes, reads.retenus),
 		Exports:  h.exportLinks(r),
 		Avis:     avis,
 	}
@@ -396,18 +428,18 @@ func (h *Handler) renderFinanceIndex(
 	// qui l'ouvre, indépendamment des droits finance.
 	if ActorFromContext(r.Context()).Allows(identity.ScopeFinanceWrite) {
 		if factureForm == nil {
-			form := h.emptyFactureForm(retenus)
+			form := h.emptyFactureForm(reads.retenus)
 			factureForm = &form
 		}
 		if acompteForm == nil {
-			form := h.emptyAcompteForm(r, retenus)
+			form := h.emptyAcompteForm(r, reads.retenus)
 			acompteForm = &form
 		}
 		data.FactureForm = *factureForm
 		data.AcompteForm = *acompteForm
 	}
 	if ActorFromContext(r.Context()).Allows(identity.ScopeDocumentWrite) {
-		data.PieceForm = h.financePieceForm(r, factures)
+		data.PieceForm = h.financePieceForm(r, reads.factures)
 	}
 
 	h.render(w, r, pageFinanceIndex, status, data)
@@ -477,14 +509,13 @@ func retenuLabels(retenus []retenuInfo) map[string]string {
 // référence est faible (R2). Ces montants-là gardent leur ligne, sous un
 // libellé qui dit que le devis a disparu : les faire taire fausserait le total
 // que la ligne chantier affiche.
-func (h *Handler) newSynthese(r *http.Request, retenus []retenuInfo, totaux finance.Totaux) syntheseData {
+func (h *Handler) newSynthese(r *http.Request, reads financeReads) syntheseData {
 	synthese := syntheseData{}
-	var engageTotal devis.Montant
+	retenus, totaux := reads.retenus, reads.totaux
 
 	seen := make(map[string]bool, len(retenus))
 	for _, retenu := range retenus {
 		seen[retenu.id] = true
-		engageTotal += retenu.montant
 
 		total := totaux.ParDevis[retenu.id]
 		synthese.Lignes = append(synthese.Lignes, syntheseLigne{
@@ -533,11 +564,11 @@ func (h *Handler) newSynthese(r *http.Request, retenus []retenuInfo, totaux fina
 
 	synthese.Total = syntheseLigne{
 		Libelle:     h.translate(r, "finance.synthese.total"),
-		Engage:      formatMontant(engageTotal),
+		Engage:      formatMontant(reads.engage),
 		Facture:     formatMontantFinance(totaux.Chantier.Facture),
 		Paye:        formatMontantFinance(totaux.Chantier.Paye),
 		Rembourse:   formatMontantFinance(totaux.Chantier.Rembourse),
-		ResteAPayer: formatMontantFinance(finance.Montant(engageTotal) - totaux.Chantier.Paye),
+		ResteAPayer: formatMontantFinance(finance.Montant(reads.engage) - totaux.Chantier.Paye),
 	}
 
 	return synthese
@@ -557,13 +588,16 @@ func (h *Handler) financePieceLabel(r *http.Request, devisID string, labels map[
 }
 
 // newFactureRows met les factures sous leur forme d'affichage, justificatifs
-// compris — une lecture par facture, sur un volume minuscule, gardée par
+// compris — une seule lecture pour toutes les factures, gardée par
 // document:read comme sur la page des devis.
 func (h *Handler) newFactureRows(r *http.Request, factures []finance.Facture, retenus []retenuInfo) ([]factureRow, error) {
 	labels := retenuLabels(retenus)
-	actor := ActorFromContext(r.Context())
-	canWrite := actor.Allows(identity.ScopeFinanceWrite)
-	canReadDocs := actor.Allows(identity.ScopeDocumentRead)
+	canWrite := ActorFromContext(r.Context()).Allows(identity.ScopeFinanceWrite)
+
+	justificatifs, err := h.justificatifsParFacture(r, factures)
+	if err != nil {
+		return nil, err
+	}
 
 	rows := make([]factureRow, 0, len(factures))
 	for _, facture := range factures {
@@ -592,22 +626,13 @@ func (h *Handler) newFactureRows(r *http.Request, factures []finance.Facture, re
 			row.Rembourse = formatMontantFinance(suivi.MontantRembourse)
 		}
 
-		if canReadDocs {
-			docs, err := h.documents.DocumentsByTarget(r.Context(), document.Target{
-				Type: document.TargetFacture,
-				ID:   facture.ID.String(),
+		for _, doc := range justificatifs[facture.ID.String()] {
+			row.Pieces = append(row.Pieces, pieceRow{
+				Nom:       doc.FileName,
+				URL:       documentDownloadPath(doc.ID),
+				Categorie: h.translate(r, "document.categorie."+doc.Category.String()),
+				Taille:    h.formatTaille(r, doc.SizeBytes),
 			})
-			if err != nil {
-				return nil, err
-			}
-			for _, doc := range docs {
-				row.Pieces = append(row.Pieces, pieceRow{
-					Nom:       doc.FileName,
-					URL:       documentDownloadPath(doc.ID),
-					Categorie: h.translate(r, "document.categorie."+doc.Category.String()),
-					Taille:    h.formatTaille(r, doc.SizeBytes),
-				})
-			}
 		}
 
 		rows = append(rows, row)
@@ -722,9 +747,12 @@ func (h *Handler) moyenOptions(r *http.Request, selected string) []moyenOption {
 // --- Enregistrement des pièces -----------------------------------------------
 
 // resolveRetenu relit le devis choisi dans un formulaire et vérifie qu'il est
-// bien RETENU. C'est la vérification de l'adapter — le domaine finance ne sait
-// pas lire un devis (R2) — et elle rend le montant engagé que l'invariant des
-// acomptes exige.
+// bien RETENU. La question est posée au domaine devis, qui la partage avec
+// l'adapter MCP ([devis.Service.DevisRetenu]) ; l'adapter n'en garde que la
+// traduction des refus dans son propre vocabulaire d'erreur.
+//
+// Le montant engagé reste entre les mains de l'appelant : c'est lui qui le
+// transmettra au domaine finance en simple valeur (R1/R2).
 //
 // Un identifiant vide est le choix « hors devis » : rien à résoudre, rien à
 // reprocher, aucun montant engagé.
@@ -733,15 +761,14 @@ func (h *Handler) resolveRetenu(r *http.Request, devisID string) (retenuInfo, er
 		return retenuInfo{}, nil
 	}
 
-	proposition, err := h.devis.Devis(r.Context(), devis.ID(devisID))
-	if errors.Is(err, devis.ErrUnknownDevis) {
+	proposition, err := h.devis.DevisRetenu(r.Context(), devis.ID(devisID))
+	switch {
+	case errors.Is(err, devis.ErrUnknownDevis):
 		return retenuInfo{}, fmt.Errorf("%w : %s", errFinanceDevisInconnu, devisID)
-	}
-	if err != nil {
-		return retenuInfo{}, fmt.Errorf("résolution du devis de rattachement : %w", err)
-	}
-	if proposition.Statut != devis.StatutRetenu {
+	case errors.Is(err, devis.ErrDevisNotRetenu):
 		return retenuInfo{}, fmt.Errorf("%w : %s", errDevisNonRetenu, devisID)
+	case err != nil:
+		return retenuInfo{}, fmt.Errorf("résolution du devis de rattachement : %w", err)
 	}
 
 	return retenuInfo{id: proposition.ID.String(), montant: proposition.Montant}, nil
@@ -750,7 +777,7 @@ func (h *Handler) resolveRetenu(r *http.Request, devisID string) (retenuInfo, er
 // handleRecordFacture enregistre une facture.
 func (h *Handler) handleRecordFacture(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.failFinance(w, r, fmt.Errorf("lecture du formulaire de facture : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture du formulaire de facture : %w", err))
 		return
 	}
 
@@ -796,7 +823,7 @@ func (h *Handler) recordFactureFromForm(r *http.Request) error {
 // handleRecordAcompte enregistre un acompte versé.
 func (h *Handler) handleRecordAcompte(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.failFinance(w, r, fmt.Errorf("lecture du formulaire d'acompte : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture du formulaire d'acompte : %w", err))
 		return
 	}
 
@@ -847,18 +874,34 @@ func (h *Handler) recordAcompteFromForm(r *http.Request) error {
 	return err
 }
 
-// rejectFactureForm réaffiche la page avec le formulaire de facture tel qu'il
-// a été soumis et le message d'échec.
-func (h *Handler) rejectFactureForm(w http.ResponseWriter, r *http.Request, cause error) {
+// rejectFinanceForm est le prologue commun aux deux réaffichages de
+// formulaire : traduire le refus — ou tomber en panne si ce n'en est pas un,
+// sous l'enveloppe que l'appelant donne — puis relire les devis retenus dont le
+// sélecteur a besoin. Le booléen dit si l'appelant peut continuer ; sinon, la
+// réponse est déjà écrite.
+func (h *Handler) rejectFinanceForm(
+	w http.ResponseWriter, r *http.Request, cause error, wrap string,
+) (string, []retenuInfo, bool) {
 	messageID := financeMessageID(cause)
 	if messageID == "" {
-		h.failFinance(w, r, fmt.Errorf("enregistrement d'une facture : %w", cause))
-		return
+		h.failPage(w, r, fmt.Errorf("%s : %w", wrap, cause))
+		return "", nil, false
 	}
 
 	retenus, err := h.devisRetenus(r.Context())
 	if err != nil {
-		h.failFinance(w, r, fmt.Errorf("lecture des devis retenus : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture des devis retenus : %w", err))
+		return "", nil, false
+	}
+
+	return messageID, retenus, true
+}
+
+// rejectFactureForm réaffiche la page avec le formulaire de facture tel qu'il
+// a été soumis et le message d'échec.
+func (h *Handler) rejectFactureForm(w http.ResponseWriter, r *http.Request, cause error) {
+	messageID, retenus, ok := h.rejectFinanceForm(w, r, cause, "enregistrement d'une facture")
+	if !ok {
 		return
 	}
 
@@ -872,21 +915,16 @@ func (h *Handler) rejectFactureForm(w http.ResponseWriter, r *http.Request, caus
 	form.Notes = r.PostFormValue(fieldNotes)
 	form.Error = h.translate(r, messageID)
 
-	h.renderFinanceIndex(w, r, http.StatusUnprocessableEntity, &form, nil, "")
+	// Les retenus déjà lus repartent avec le rendu : sans cela, la page les
+	// relirait aussitôt, soit deux comparaisons complètes pour une requête.
+	h.renderFinanceIndex(w, r, http.StatusUnprocessableEntity, &form, nil, "", retenus)
 }
 
 // rejectAcompteForm réaffiche la page avec le formulaire d'acompte tel qu'il a
 // été soumis et le message d'échec.
 func (h *Handler) rejectAcompteForm(w http.ResponseWriter, r *http.Request, cause error) {
-	messageID := financeMessageID(cause)
-	if messageID == "" {
-		h.failFinance(w, r, fmt.Errorf("enregistrement d'un acompte : %w", cause))
-		return
-	}
-
-	retenus, err := h.devisRetenus(r.Context())
-	if err != nil {
-		h.failFinance(w, r, fmt.Errorf("lecture des devis retenus : %w", err))
+	messageID, retenus, ok := h.rejectFinanceForm(w, r, cause, "enregistrement d'un acompte")
+	if !ok {
 		return
 	}
 
@@ -900,7 +938,7 @@ func (h *Handler) rejectAcompteForm(w http.ResponseWriter, r *http.Request, caus
 	form.Notes = r.PostFormValue(fieldNotes)
 	form.Error = h.translate(r, messageID)
 
-	h.renderFinanceIndex(w, r, http.StatusUnprocessableEntity, nil, &form, "")
+	h.renderFinanceIndex(w, r, http.StatusUnprocessableEntity, nil, &form, "", retenus)
 }
 
 // --- Transitions ----------------------------------------------------------------
@@ -971,7 +1009,7 @@ func (h *Handler) applyFinanceRemboursement(
 	notFound error,
 ) {
 	if err := r.ParseForm(); err != nil {
-		h.failFinance(w, r, fmt.Errorf("lecture du formulaire de remboursement : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture du formulaire de remboursement : %w", err))
 		return
 	}
 
@@ -1003,9 +1041,9 @@ func (h *Handler) concludeFinanceAction(w http.ResponseWriter, r *http.Request, 
 		// remboursement trop grand. La page se réaffiche avec le message et
 		// l'état RELU : ce qui est montré est le vrai.
 		h.renderFinanceIndex(w, r, http.StatusUnprocessableEntity, nil, nil,
-			h.translate(r, financeMessageID(err)))
+			h.translate(r, financeMessageID(err)), nil)
 	default:
-		h.failFinance(w, r, fmt.Errorf("action sur une pièce financière : %w", err))
+		h.failPage(w, r, fmt.Errorf("action sur une pièce financière : %w", err))
 	}
 }
 
@@ -1026,13 +1064,13 @@ func (h *Handler) handleFinanceExport(w http.ResponseWriter, r *http.Request) {
 
 	dossier, err := h.buildDossierAssurance(r)
 	if err != nil {
-		h.failFinance(w, r, fmt.Errorf("assemblage du dossier d'assurance : %w", err))
+		h.failPage(w, r, fmt.Errorf("assemblage du dossier d'assurance : %w", err))
 		return
 	}
 
 	var rendered bytes.Buffer
 	if err := format.Write(&rendered, dossier); err != nil {
-		h.failFinance(w, r, fmt.Errorf("rendu du dossier d'assurance : %w", err))
+		h.failPage(w, r, fmt.Errorf("rendu du dossier d'assurance : %w", err))
 		return
 	}
 
@@ -1064,29 +1102,19 @@ func (h *Handler) handleFinanceExport(w http.ResponseWriter, r *http.Request) {
 // domaine finance fixe la forme du dossier (finance.DossierAssurance) et ne
 // résout rien lui-même.
 func (h *Handler) buildDossierAssurance(r *http.Request) (finance.DossierAssurance, error) {
-	retenus, err := h.devisRetenus(r.Context())
-	if err != nil {
-		return finance.DossierAssurance{}, err
-	}
-	totaux, err := h.finance.Totaux(r.Context())
-	if err != nil {
-		return finance.DossierAssurance{}, err
-	}
-	factures, err := h.finance.Factures(r.Context())
-	if err != nil {
-		return finance.DossierAssurance{}, err
-	}
-	acomptes, err := h.finance.Acomptes(r.Context())
+	// Le même prologue que la page : mêmes sources, mêmes cumuls, un seul
+	// endroit où ils se lisent.
+	reads, err := h.loadFinances(r.Context(), nil)
 	if err != nil {
 		return finance.DossierAssurance{}, err
 	}
 
-	labels := retenuLabels(retenus)
-
-	var engage devis.Montant
-	for _, retenu := range retenus {
-		engage += retenu.montant
+	justificatifs, err := h.justificatifsParFacture(r, reads.factures)
+	if err != nil {
+		return finance.DossierAssurance{}, err
 	}
+
+	labels := retenuLabels(reads.retenus)
 
 	dossier := finance.DossierAssurance{
 		GeneratedAt: h.now().UTC(),
@@ -1094,15 +1122,15 @@ func (h *Handler) buildDossierAssurance(r *http.Request) (finance.DossierAssuran
 		// distingue deux chantiers quand deux dossiers se croisent.
 		Intitule: h.translate(r, "finance.export.intitule", "Hote", h.baseHost),
 		Totaux: finance.TotauxDossier{
-			Engage:    finance.Montant(engage),
-			Facture:   totaux.Chantier.Facture,
-			Paye:      totaux.Chantier.Paye,
-			Rembourse: totaux.Chantier.Rembourse,
+			Engage:    finance.Montant(reads.engage),
+			Facture:   reads.totaux.Chantier.Facture,
+			Paye:      reads.totaux.Chantier.Paye,
+			Rembourse: reads.totaux.Chantier.Rembourse,
 		},
 	}
 
-	for _, facture := range factures {
-		ligne := finance.LigneFacture{
+	for _, facture := range reads.factures {
+		dossier.Factures = append(dossier.Factures, finance.LigneFacture{
 			DevisLibelle: h.financePieceLabel(r, facture.DevisID, labels),
 			Entreprise:   facture.Entreprise,
 			Numero:       facture.Numero,
@@ -1111,19 +1139,15 @@ func (h *Handler) buildDossierAssurance(r *http.Request) (finance.DossierAssuran
 			Paiement:     facture.Paiement,
 			PaidAt:       facture.PaidAt,
 			Assurance:    facture.Assurance,
-		}
-		ligne.Pieces, err = h.factureJustificatifs(r, facture.ID)
-		if err != nil {
-			return finance.DossierAssurance{}, err
-		}
-		dossier.Factures = append(dossier.Factures, ligne)
+			Pieces:       piecesJointes(justificatifs[facture.ID.String()]),
+		})
 	}
 
 	// Les acomptes n'ont pas de justificatifs : le domaine document ne connaît
 	// pas de cible « acompte » (document.TargetFacture existe, pas
 	// TargetAcompte). Le jour où ce type de cible naîtra, la liste se
 	// remplira ici, sans toucher au domaine finance.
-	for _, acompte := range acomptes {
+	for _, acompte := range reads.acomptes {
 		dossier.Acomptes = append(dossier.Acomptes, finance.LigneAcompte{
 			DevisLibelle: h.financePieceLabel(r, acompte.DevisID, labels),
 			Entreprise:   acompte.Entreprise,
@@ -1137,24 +1161,38 @@ func (h *Handler) buildDossierAssurance(r *http.Request) (finance.DossierAssuran
 	return dossier, nil
 }
 
-// factureJustificatifs liste les pièces jointes d'une facture, par la cible
-// facture/{id} du domaine document.
+// justificatifsParFacture lit d'un bloc les justificatifs de toutes les
+// factures, par la cible facture/{id} du domaine document, et les rend groupés
+// par identifiant de facture. Une lecture pour la page entière plutôt qu'une
+// par ligne : le tableau des factures et l'export du dossier la partagent.
 //
 // La lecture n'a lieu que si la personne détient document:read : les scopes
 // décident de ce qui est construit, pas seulement de ce qui s'affiche. Un
 // dossier exporté sans ce scope liste les pièces financières sans leurs
 // justificatifs — c'est ce que le rôle autorise, le document le reflète.
-func (h *Handler) factureJustificatifs(r *http.Request, factureID finance.ID) ([]finance.PieceJointe, error) {
-	if !ActorFromContext(r.Context()).Allows(identity.ScopeDocumentRead) {
+func (h *Handler) justificatifsParFacture(r *http.Request, factures []finance.Facture) (map[string][]document.Document, error) {
+	if len(factures) == 0 || !ActorFromContext(r.Context()).Allows(identity.ScopeDocumentRead) {
 		return nil, nil
 	}
 
-	docs, err := h.documents.DocumentsByTarget(r.Context(), document.Target{
-		Type: document.TargetFacture,
-		ID:   factureID.String(),
-	})
+	ids := make([]string, 0, len(factures))
+	for _, facture := range factures {
+		ids = append(ids, facture.ID.String())
+	}
+
+	docs, err := h.documents.DocumentsByTargets(r.Context(), document.TargetFacture, ids)
 	if err != nil {
-		return nil, fmt.Errorf("lecture des justificatifs de la facture %s : %w", factureID, err)
+		return nil, fmt.Errorf("lecture des justificatifs des factures : %w", err)
+	}
+
+	return docs, nil
+}
+
+// piecesJointes met les pièces d'une facture sous la forme que le dossier
+// d'assurance attend. Rien à lire : les métadonnées sont déjà en main.
+func piecesJointes(docs []document.Document) []finance.PieceJointe {
+	if len(docs) == 0 {
+		return nil
 	}
 
 	pieces := make([]finance.PieceJointe, 0, len(docs))
@@ -1165,7 +1203,7 @@ func (h *Handler) factureJustificatifs(r *http.Request, factureID finance.ID) ([
 		})
 	}
 
-	return pieces, nil
+	return pieces
 }
 
 // --- Divers ---------------------------------------------------------------------
@@ -1180,10 +1218,4 @@ func financeActeurFrom(r *http.Request) finance.ActeurID {
 // financePiecePath rend l'adresse d'une action sur une pièce.
 func financePiecePath(base string, id finance.ID, suffix string) string {
 	return base + "/" + url.PathEscape(id.String()) + suffix
-}
-
-// failFinance journalise une panne et sert la page d'erreur.
-func (h *Handler) failFinance(w http.ResponseWriter, r *http.Request, err error) {
-	h.fail(r, err)
-	h.render(w, r, pageInternalError, http.StatusInternalServerError, nil)
 }

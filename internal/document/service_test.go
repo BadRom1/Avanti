@@ -390,6 +390,57 @@ func TestDocumentsByTarget(t *testing.T) {
 	}
 }
 
+// TestDocumentsByTargets groupe par cible en une lecture, dédoublonne les
+// identifiants demandés, ignore les cibles sans pièce et refuse un identifiant
+// vide plutôt que de le laisser passer.
+func TestDocumentsByTargets(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	premiere := document.Target{Type: document.TargetFacture, ID: "facture-1"}
+	seconde := document.Target{Type: document.TargetFacture, ID: "facture-2"}
+	f.upload(t, func(in *document.UploadInput) { in.Target = premiere })
+	f.upload(t, func(in *document.UploadInput) {
+		in.FileName = "avoir.pdf"
+		in.Target = seconde
+		withContent(in, "avoir")
+	})
+	// Même identifiant de cible, autre type : le groupement ne doit pas le
+	// confondre avec la facture.
+	f.upload(t, func(in *document.UploadInput) {
+		in.FileName = "homonyme.pdf"
+		in.Target = document.Target{Type: document.TargetDevis, ID: "facture-1"}
+		withContent(in, "homonyme")
+	})
+
+	grouped, err := f.service.DocumentsByTargets(t.Context(), document.TargetFacture,
+		[]string{"facture-1", "facture-1", "facture-2", "facture-sans-piece"})
+	if err != nil {
+		t.Fatalf("DocumentsByTargets() échoué : %v", err)
+	}
+	if len(grouped) != 2 {
+		t.Fatalf("DocumentsByTargets() = %+v, attendu deux cibles", grouped)
+	}
+	if pieces := grouped["facture-1"]; len(pieces) != 1 || pieces[0].Target != premiere {
+		t.Errorf("pièces de facture-1 = %+v", pieces)
+	}
+	if pieces := grouped["facture-2"]; len(pieces) != 1 || pieces[0].Target != seconde {
+		t.Errorf("pièces de facture-2 = %+v", pieces)
+	}
+
+	vide, err := f.service.DocumentsByTargets(t.Context(), document.TargetFacture, nil)
+	if err != nil || len(vide) != 0 {
+		t.Errorf("DocumentsByTargets(sans identifiant) = %+v, %v", vide, err)
+	}
+
+	if _, err := f.service.DocumentsByTargets(t.Context(), document.TargetFacture, []string{""}); !errors.Is(err, document.ErrInvalidTarget) {
+		t.Errorf("DocumentsByTargets(identifiant vide) = %v, attendu ErrInvalidTarget", err)
+	}
+	if _, err := f.service.DocumentsByTargets(t.Context(), "chantier", []string{"x"}); !errors.Is(err, document.ErrInvalidTarget) {
+		t.Errorf("DocumentsByTargets(type inconnu) = %v, attendu ErrInvalidTarget", err)
+	}
+}
+
 // TestOpenReturnsMetadataAndContent : Open rend les deux, dans cet ordre —
 // jamais de contenu sans métadonnées.
 func TestOpenReturnsMetadataAndContent(t *testing.T) {

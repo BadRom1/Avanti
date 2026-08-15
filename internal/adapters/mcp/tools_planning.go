@@ -54,24 +54,20 @@ type planningEtapesResult struct {
 }
 
 func (h *Handler) handlePlanningEtapes(ctx context.Context, req *sdk.CallToolRequest, _ struct{}) (*sdk.CallToolResult, planningEtapesResult, error) {
-	var zero planningEtapesResult
-
-	if _, err := h.requireScope(ctx, req, identity.ScopePlanningRead); err != nil {
-		return nil, zero, err
-	}
-
-	etapes, err := h.planning.Etapes(ctx)
-	if err != nil {
-		return nil, zero, h.failTool(ctx, "planning_etapes", err)
-	}
-
+	// Le jour de lecture est fixé avant l'appel et capturé par la mise en
+	// forme : [readList] ne passe que l'élément, et toutes les étapes d'une même
+	// réponse doivent dériver leur statut du MÊME jour.
 	today := h.clock().UTC()
-	out := planningEtapesResult{Etapes: make([]etapeJSON, 0, len(etapes))}
-	for _, etape := range etapes {
-		out.Etapes = append(out.Etapes, newEtapeJSON(etape, today))
+
+	etapes, err := readList(ctx, h, req, "planning_etapes", identity.ScopePlanningRead,
+		h.planning.Etapes, func(etape planning.Etape) etapeJSON {
+			return newEtapeJSON(etape, today)
+		})
+	if err != nil {
+		return nil, planningEtapesResult{}, err
 	}
 
-	return nil, out, nil
+	return nil, planningEtapesResult{Etapes: etapes}, nil
 }
 
 // jalonJSON est un jalon contractuel, tel que les tools le rendent.
@@ -85,38 +81,36 @@ type jalonJSON struct {
 	RetardJours int    `json:"retard_jours,omitempty" jsonschema:"jours de retard constatés ; zéro quand en_retard est faux"`
 }
 
+func newJalonJSON(jalon planning.Jalon, today time.Time) jalonJSON {
+	return jalonJSON{
+		ID:          jalon.ID.String(),
+		Nom:         jalon.Name,
+		Date:        formatDate(jalon.Date),
+		Atteint:     jalon.Atteint(),
+		AtteintLe:   formatDate(jalon.ReachedAt),
+		EnRetard:    jalon.EnRetard(today),
+		RetardJours: jalon.RetardConstate(today),
+	}
+}
+
 // planningJalonsResult est la sortie de planning_jalons.
 type planningJalonsResult struct {
 	Jalons []jalonJSON `json:"jalons" jsonschema:"tous les jalons, triés par échéance"`
 }
 
 func (h *Handler) handlePlanningJalons(ctx context.Context, req *sdk.CallToolRequest, _ struct{}) (*sdk.CallToolResult, planningJalonsResult, error) {
-	var zero planningJalonsResult
-
-	if _, err := h.requireScope(ctx, req, identity.ScopePlanningRead); err != nil {
-		return nil, zero, err
-	}
-
-	jalons, err := h.planning.Jalons(ctx)
-	if err != nil {
-		return nil, zero, h.failTool(ctx, "planning_jalons", err)
-	}
-
+	// Même capture du jour de lecture que planning_etapes.
 	today := h.clock().UTC()
-	out := planningJalonsResult{Jalons: make([]jalonJSON, 0, len(jalons))}
-	for _, jalon := range jalons {
-		out.Jalons = append(out.Jalons, jalonJSON{
-			ID:          jalon.ID.String(),
-			Nom:         jalon.Name,
-			Date:        formatDate(jalon.Date),
-			Atteint:     jalon.Atteint(),
-			AtteintLe:   formatDate(jalon.ReachedAt),
-			EnRetard:    jalon.EnRetard(today),
-			RetardJours: jalon.RetardConstate(today),
+
+	jalons, err := readList(ctx, h, req, "planning_jalons", identity.ScopePlanningRead,
+		h.planning.Jalons, func(jalon planning.Jalon) jalonJSON {
+			return newJalonJSON(jalon, today)
 		})
+	if err != nil {
+		return nil, planningJalonsResult{}, err
 	}
 
-	return nil, out, nil
+	return nil, planningJalonsResult{Jalons: jalons}, nil
 }
 
 // etapeTransitionInput est l'entrée de etape_demarrer et etape_terminer.

@@ -573,6 +573,26 @@ func (r *memDocumentRepo) ListByTarget(_ context.Context, target document.Target
 	return documents, nil
 }
 
+func (r *memDocumentRepo) ListByTargets(_ context.Context, targetType document.TargetType, ids []string) (map[string][]document.Document, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	wanted := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		wanted[id] = true
+	}
+
+	grouped := make(map[string][]document.Document, len(ids))
+	for i := len(r.order) - 1; i >= 0; i-- {
+		doc := r.documents[r.order[i]]
+		if doc.Target.Type == targetType && wanted[doc.Target.ID] {
+			grouped[doc.Target.ID] = append(grouped[doc.Target.ID], doc)
+		}
+	}
+
+	return grouped, nil
+}
+
 type memDocumentStorage struct {
 	mu       sync.Mutex
 	contents map[string][]byte

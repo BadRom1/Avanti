@@ -394,6 +394,7 @@
 
   "planning.erreur.nom_vide": "Le nom est obligatoire.",
   "planning.erreur.plage_invalide": "La fin prévue ne peut pas précéder le début prévu.",
+  "planning.erreur.dependances_trop_nombreuses": "Une étape ne peut pas avoir plus de 50 prérequis.",
   "planning.erreur.dependance_invalide": "Les prérequis choisis sont incohérents (doublon ou auto-référence).",
   "planning.erreur.dependance_inconnue": "Un des prérequis choisis n'existe pas.",
   "planning.erreur.cycle": "Ces prérequis formeraient un cycle : chaque étape attendrait une étape qui l'attend.",

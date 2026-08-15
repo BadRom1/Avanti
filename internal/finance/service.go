@@ -473,6 +473,16 @@ func (s *Service) Totaux(ctx context.Context) (Totaux, error) {
 		return Totaux{}, err
 	}
 
+	return ComputeTotaux(factures, acomptes), nil
+}
+
+// ComputeTotaux répartit en cumuls des pièces DÉJÀ LUES, sans rien relire.
+//
+// C'est la même agrégation que [Service.Totaux], offerte à l'appelant qui tient
+// déjà les factures et les acomptes — la page des finances et le dossier
+// d'assurance les affichent ligne à ligne en plus de leurs totaux. Passer par
+// le service leur coûterait deux lectures de plus pour le même résultat.
+func ComputeTotaux(factures []Facture, acomptes []Acompte) Totaux {
 	totaux := Totaux{ParDevis: make(map[string]TotalFinance)}
 	for _, facture := range factures {
 		paye := Montant(0)
@@ -485,7 +495,7 @@ func (s *Service) Totaux(ctx context.Context) (Totaux, error) {
 		totaux.cumulate(acompte.DevisID, 0, acompte.Montant, acompte.Assurance.MontantRembourse)
 	}
 
-	return totaux, nil
+	return totaux
 }
 
 // cumulate ajoute une pièce au périmètre qui la porte et au total du chantier.

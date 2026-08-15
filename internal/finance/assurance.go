@@ -30,13 +30,6 @@ const (
 // vie. C'est la référence de [StatutAssurance.Known].
 var allStatutsAssurance = []StatutAssurance{AssuranceNonEnvoyee, AssuranceEnvoyee, AssuranceRemboursee}
 
-// AllStatutsAssurance renvoie les statuts reconnus, dans un ordre stable.
-//
-// La tranche renvoyée est une copie : la modifier ne change rien au domaine.
-func AllStatutsAssurance() []StatutAssurance {
-	return slices.Clone(allStatutsAssurance)
-}
-
 // Known indique si le statut fait partie de ceux que le domaine reconnaît.
 func (s StatutAssurance) Known() bool {
 	return slices.Contains(allStatutsAssurance, s)

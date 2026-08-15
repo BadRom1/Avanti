@@ -78,13 +78,11 @@ func (h *Handler) handleAssurancePreparerEnvoi(ctx context.Context, req *sdk.Cal
 	return nil, dossier, nil
 }
 
-// buildDossier lit les quatre sources et compose le dossier.
+// buildDossier lit les trois sources et compose le dossier. Les cumuls ne sont
+// pas une quatrième lecture : ils se déduisent des pièces déjà en main
+// ([finance.ComputeTotaux]), là où h.finance.Totaux relirait les mêmes.
 func (h *Handler) buildDossier(ctx context.Context, actor identity.Actor) (dossierAssuranceResult, error) {
 	retenus, err := h.devisRetenus(ctx)
-	if err != nil {
-		return dossierAssuranceResult{}, err
-	}
-	totaux, err := h.finance.Totaux(ctx)
 	if err != nil {
 		return dossierAssuranceResult{}, err
 	}
@@ -93,6 +91,12 @@ func (h *Handler) buildDossier(ctx context.Context, actor identity.Actor) (dossi
 		return dossierAssuranceResult{}, err
 	}
 	acomptes, err := h.finance.Acomptes(ctx)
+	if err != nil {
+		return dossierAssuranceResult{}, err
+	}
+	totaux := finance.ComputeTotaux(factures, acomptes)
+
+	justificatifs, err := h.justificatifsParFacture(ctx, actor, factures)
 	if err != nil {
 		return dossierAssuranceResult{}, err
 	}
@@ -119,15 +123,11 @@ func (h *Handler) buildDossier(ctx context.Context, actor identity.Actor) (dossi
 	}
 
 	for _, facture := range factures {
-		ligne := ligneFactureJSON{
+		dossier.Factures = append(dossier.Factures, ligneFactureJSON{
 			DevisLibelle: labels[facture.DevisID],
 			Facture:      newFactureJSON(facture),
-		}
-		ligne.Pieces, err = h.factureJustificatifs(ctx, actor, facture.ID)
-		if err != nil {
-			return dossierAssuranceResult{}, err
-		}
-		dossier.Factures = append(dossier.Factures, ligne)
+			Pieces:       piecesJointes(justificatifs[facture.ID.String()]),
+		})
 	}
 
 	// Les acomptes n'ont pas de justificatifs : le domaine document ne connaît
@@ -142,21 +142,38 @@ func (h *Handler) buildDossier(ctx context.Context, actor identity.Actor) (dossi
 	return dossier, nil
 }
 
-// factureJustificatifs liste les pièces jointes d'une facture, seulement si le
-// jeton porte document:read : un dossier préparé sans ce scope liste les pièces
-// financières sans leurs justificatifs — c'est ce que le jeton autorise, la
-// réponse le reflète.
-func (h *Handler) factureJustificatifs(ctx context.Context, actor identity.Actor, factureID finance.ID) ([]pieceJointeJSON, error) {
-	if !actor.Allows(identity.ScopeDocumentRead) {
+// justificatifsParFacture lit d'un bloc les justificatifs de toutes les
+// factures, groupés par identifiant de facture — une lecture pour le dossier
+// entier plutôt qu'une par ligne, comme l'export web.
+//
+// La lecture n'a lieu que si le jeton porte document:read : un dossier préparé
+// sans ce scope liste les pièces financières sans leurs justificatifs — c'est
+// ce que le jeton autorise, la réponse le reflète.
+func (h *Handler) justificatifsParFacture(
+	ctx context.Context, actor identity.Actor, factures []finance.Facture,
+) (map[string][]document.Document, error) {
+	if len(factures) == 0 || !actor.Allows(identity.ScopeDocumentRead) {
 		return nil, nil
 	}
 
-	docs, err := h.documents.DocumentsByTarget(ctx, document.Target{
-		Type: document.TargetFacture,
-		ID:   factureID.String(),
-	})
+	ids := make([]string, 0, len(factures))
+	for _, facture := range factures {
+		ids = append(ids, facture.ID.String())
+	}
+
+	docs, err := h.documents.DocumentsByTargets(ctx, document.TargetFacture, ids)
 	if err != nil {
-		return nil, fmt.Errorf("lecture des justificatifs de la facture %s : %w", factureID, err)
+		return nil, fmt.Errorf("lecture des justificatifs des factures : %w", err)
+	}
+
+	return docs, nil
+}
+
+// piecesJointes met les pièces d'une facture sous la forme de la réponse. Rien
+// à lire : les métadonnées sont déjà en main.
+func piecesJointes(docs []document.Document) []pieceJointeJSON {
+	if len(docs) == 0 {
+		return nil
 	}
 
 	pieces := make([]pieceJointeJSON, 0, len(docs))
@@ -167,5 +184,5 @@ func (h *Handler) factureJustificatifs(ctx context.Context, actor identity.Actor
 		})
 	}
 
-	return pieces, nil
+	return pieces
 }

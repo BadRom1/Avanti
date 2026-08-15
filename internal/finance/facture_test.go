@@ -286,29 +286,37 @@ func TestNormalizeMoyenPaiement(t *testing.T) {
 	}
 }
 
-// TestEnumerations : les listes exportées sont des copies et couvrent les
-// valeurs attendues — c'est sur elles que les gabarits et les CHECK SQL
-// s'alignent.
+// TestEnumerations : la liste exportée est une copie et couvre les valeurs
+// attendues, et chaque valeur des trois énumérations est reconnue par le
+// domaine — c'est sur elles que les gabarits et les CHECK SQL s'alignent.
+//
+// Les statuts d'assurance et de paiement n'ont pas de liste exportée : rien
+// n'en construit de sélecteur, seul [finance.AllMoyensPaiement] en alimente
+// un. L'alignement reste vérifié valeur par valeur, par Known().
 func TestEnumerations(t *testing.T) {
 	t.Parallel()
 
-	statuts := finance.AllStatutsAssurance()
-	if len(statuts) != 3 || statuts[0] != finance.AssuranceNonEnvoyee || statuts[2] != finance.AssuranceRemboursee {
-		t.Errorf("AllStatutsAssurance() = %v", statuts)
-	}
-	statuts[0] = "corrompu"
-	if !finance.AssuranceNonEnvoyee.Known() {
-		t.Error("la liste rendue n'est pas une copie")
+	for _, statut := range []finance.StatutAssurance{
+		finance.AssuranceNonEnvoyee, finance.AssuranceEnvoyee, finance.AssuranceRemboursee,
+	} {
+		if !statut.Known() {
+			t.Errorf("statut d'assurance %q non reconnu", statut)
+		}
 	}
 
-	paiements := finance.AllStatutsPaiement()
-	if len(paiements) != 2 || paiements[0] != finance.PaiementImpayee {
-		t.Errorf("AllStatutsPaiement() = %v", paiements)
+	for _, paiement := range []finance.StatutPaiement{finance.PaiementImpayee, finance.PaiementPayee} {
+		if !paiement.Known() {
+			t.Errorf("statut de paiement %q non reconnu", paiement)
+		}
 	}
 
 	moyens := finance.AllMoyensPaiement()
 	if len(moyens) != 4 || moyens[0] != finance.MoyenVirement {
 		t.Errorf("AllMoyensPaiement() = %v", moyens)
+	}
+	moyens[0] = "corrompu"
+	if !finance.MoyenVirement.Known() {
+		t.Error("la liste rendue n'est pas une copie")
 	}
 
 	if finance.StatutAssurance("perdu").Known() || finance.StatutPaiement("brouillon").Known() || finance.MoyenPaiement("troc").Known() {

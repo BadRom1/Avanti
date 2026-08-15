@@ -103,6 +103,27 @@ func (r *memRepo) ListByTarget(_ context.Context, target document.Target) ([]doc
 	return documents, nil
 }
 
+func (r *memRepo) ListByTargets(_ context.Context, targetType document.TargetType, ids []string) (map[string][]document.Document, error) {
+	if err := r.failures["ListByTargets"]; err != nil {
+		return nil, err
+	}
+
+	wanted := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		wanted[id] = true
+	}
+
+	grouped := make(map[string][]document.Document, len(ids))
+	for i := len(r.order) - 1; i >= 0; i-- {
+		doc := r.documents[r.order[i]]
+		if doc.Target.Type == targetType && wanted[doc.Target.ID] {
+			grouped[doc.Target.ID] = append(grouped[doc.Target.ID], doc)
+		}
+	}
+
+	return grouped, nil
+}
+
 // memStorage est un [document.Storage] en mémoire. Il tient le contrat du
 // port : Save refuse une clé occupée, Open rend l'erreur du domaine sur une
 // clé absente, Delete est idempotent.

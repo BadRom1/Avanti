@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -44,7 +43,7 @@ const acompteColumns = `id, devis_id, entreprise, montant, date_piece, moyen, no
 
 // CreateFacture insère une facture.
 func (f *FinanceRepo) CreateFacture(ctx context.Context, facture finance.Facture) error {
-	id, auteur, err := financeWriteIDs(facture.ID.String(), facture.RecordedBy.String(), "facture")
+	id, auteur, err := writeIDs(facture.ID.String(), facture.RecordedBy.String(), "facture")
 	if err != nil {
 		return err
 	}
@@ -177,7 +176,7 @@ func (f *FinanceRepo) explainMissedFactureUpdate(ctx context.Context, id finance
 // Un acompte sans devisID entre sans transaction ni verrou : rien d'engagé à
 // comparer, l'invariant ne le concerne pas.
 func (f *FinanceRepo) CreateAcompte(ctx context.Context, acompte finance.Acompte, montantEngage finance.Montant) error {
-	id, auteur, err := financeWriteIDs(acompte.ID.String(), acompte.RecordedBy.String(), "acompte")
+	id, auteur, err := writeIDs(acompte.ID.String(), acompte.RecordedBy.String(), "acompte")
 	if err != nil {
 		return err
 	}
@@ -313,21 +312,6 @@ func (f *FinanceRepo) SumAcomptesByDevis(ctx context.Context, devisID string) (f
 	return finance.Montant(cumul), nil
 }
 
-// financeWriteIDs traduit les deux identifiants qu'une écriture porte toujours :
-// celui de la pièce et celui de l'acteur qui l'a saisie.
-func financeWriteIDs(pieceID, acteurID, label string) (piece, auteur pgtype.UUID, err error) {
-	piece, err = writeUUID(pieceID, label)
-	if err != nil {
-		return pgtype.UUID{}, pgtype.UUID{}, err
-	}
-	auteur, err = writeUUID(acteurID, "acteur")
-	if err != nil {
-		return pgtype.UUID{}, pgtype.UUID{}, err
-	}
-
-	return piece, auteur, nil
-}
-
 // scanFacture reconstruit une facture depuis une ligne.
 func scanFacture(row rowScanner) (finance.Facture, error) {
 	var (
@@ -348,7 +332,7 @@ func scanFacture(row rowScanner) (finance.Facture, error) {
 		&assurance, &envoyeeLe, &rembourse, &rembourseLe,
 		&auteur, &facture.CreatedAt, &facture.UpdatedAt)
 	if err != nil {
-		return finance.Facture{}, financeScanError(err, finance.ErrUnknownFacture)
+		return finance.Facture{}, scanError(err, finance.ErrUnknownFacture)
 	}
 
 	facture.ID = finance.ID(id.String())
@@ -381,7 +365,7 @@ func scanAcompte(row rowScanner) (finance.Acompte, error) {
 		&moyen, &acompte.Notes, &assurance, &envoyeeLe, &rembourse, &rembourseLe,
 		&auteur, &acompte.CreatedAt, &acompte.UpdatedAt)
 	if err != nil {
-		return finance.Acompte{}, financeScanError(err, finance.ErrUnknownAcompte)
+		return finance.Acompte{}, scanError(err, finance.ErrUnknownAcompte)
 	}
 
 	acompte.ID = finance.ID(id.String())
@@ -391,14 +375,6 @@ func scanAcompte(row rowScanner) (finance.Acompte, error) {
 	acompte.RecordedBy = finance.ActeurID(auteur.String())
 
 	return acompte, nil
-}
-
-// financeScanError traduit l'absence de ligne dans le vocabulaire du domaine.
-func financeScanError(err, unknown error) error {
-	if errors.Is(err, pgx.ErrNoRows) {
-		return unknown
-	}
-	return err
 }
 
 // scanSuiviAssurance reconstruit le suivi assurance depuis ses quatre colonnes.

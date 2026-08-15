@@ -40,6 +40,11 @@ var (
 	ErrUnknownDemande = errors.New("devis : demande de devis inconnue")
 	// ErrUnknownDevis signale l'absence du devis cherché.
 	ErrUnknownDevis = errors.New("devis : devis inconnu")
+	// ErrDevisNotRetenu signale un devis qui existe mais n'est pas retenu.
+	// C'est le refus de [Service.DevisRetenu] : rattacher une dépense à une
+	// offre encore en comparaison — ou écartée — n'a pas de sens, et chaque
+	// adapter traduit ce refus dans son propre vocabulaire.
+	ErrDevisNotRetenu = errors.New("devis : ce devis n'est pas retenu")
 
 	// ErrForbiddenTransition signale un changement de statut que le cycle de vie
 	// n'autorise pas — retenir un devis déjà refusé, par exemple.
