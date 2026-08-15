@@ -13,7 +13,6 @@
 # commité — .gitignore l'exclut). Partez de `cp .env.example .env`, puis
 # ajustez les lignes suivantes pour un déploiement compose :
 #
-#   AVANTI_ENV=production
 #   AVANTI_BASE_URL=https://avanti.exemple.fr        # l'URL publique réelle
 #   AVANTI_DATABASE_URL=postgres://avanti:<mot de passe>@postgres:5432/avanti?sslmode=disable
 #   AVANTI_OAUTH_SECRET=<openssl rand -base64 32>
@@ -43,6 +42,13 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Épinglé ici, et NON laissé au .env : `environment` prime sur `env_file`,
+      # donc ce fichier de production impose le mode production même si le .env
+      # recopié depuis .env.example a gardé son AVANTI_ENV=development. C'est ce
+      # mode qui arme le refus des valeurs `change-me` — l'oubli d'une ligne ne
+      # doit pas suffire à démarrer avec la clé OAuth publiée dans le dépôt.
+      AVANTI_ENV: production
     ports:
       # 127.0.0.1 : l'application n'est PAS exposée directement sur le réseau.
       # Un reverse proxy sur l'hôte (Caddy, nginx…) termine TLS devant et

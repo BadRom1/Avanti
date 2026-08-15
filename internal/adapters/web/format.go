@@ -198,19 +198,25 @@ func parseDate(raw string) (time.Time, error) {
 
 // formatDate écrit une date en notation française. Une date nulle rend la chaîne
 // vide plutôt que « 01/01/0001 », qui n'apprendrait rien à personne.
+//
+// Le retour en UTC n'est pas cosmétique : les dates sont stockées à minuit UTC
+// mais pgx les relit dans le fuseau local du serveur. Sans ce recadrage, une
+// machine à l'ouest de Greenwich afficherait la veille.
 func formatDate(instant time.Time) string {
 	if instant.IsZero() {
 		return ""
 	}
-	return instant.Format(dateDisplayLayout)
+	return instant.UTC().Format(dateDisplayLayout)
 }
 
-// formatDateInput écrit une date pour un champ <input type="date">.
+// formatDateInput écrit une date pour un champ <input type="date">. Même
+// recadrage UTC que formatDate : sans lui, ouvrir puis enregistrer un
+// formulaire reculerait la date d'un jour à chaque passage.
 func formatDateInput(instant time.Time) string {
 	if instant.IsZero() {
 		return ""
 	}
-	return instant.Format(dateInputLayout)
+	return instant.UTC().Format(dateInputLayout)
 }
 
 // parseValidityDays lit une durée de validité exprimée en jours.

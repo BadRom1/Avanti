@@ -77,7 +77,7 @@ type pgQuerier interface {
 // créations ou éditions simultanées se sérialisent sur le verrou, et la
 // seconde voit ce que la première a écrit.
 func (p *PlanningRepo) CreateEtape(ctx context.Context, etape planning.Etape) error {
-	id, auteur, err := planningWriteIDs(etape.ID.String(), etape.CreatedBy.String(), "étape")
+	id, auteur, err := writeIDs(etape.ID.String(), etape.CreatedBy.String(), "étape")
 	if err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func (p *PlanningRepo) EtapeByID(ctx context.Context, etapeID planning.ID) (plan
 		return planning.Etape{}, fmt.Errorf("lecture de l'étape %s : %w", etapeID, err)
 	}
 
-	deps, err := queryAllQ(ctx, p.pool, scanDependency,
+	deps, err := queryAll(ctx, p.pool, scanDependency,
 		`SELECT etape_id, prerequis_id FROM etape_dependances WHERE etape_id = $1 ORDER BY prerequis_id`, id)
 	if err != nil {
 		return planning.Etape{}, fmt.Errorf("lecture des prérequis de l'étape %s : %w", etapeID, err)
@@ -163,13 +163,13 @@ func (p *PlanningRepo) ListEtapes(ctx context.Context) ([]planning.Etape, error)
 // elle que les écritures rappellent SOUS le verrou pour rejouer les
 // vérifications de graphe.
 func listEtapes(ctx context.Context, q pgQuerier) ([]planning.Etape, error) {
-	etapes, err := queryAllQ(ctx, q, scanEtape,
+	etapes, err := queryAll(ctx, q, scanEtape,
 		`SELECT `+etapeColumns+` FROM etapes ORDER BY debut_prevu, id`)
 	if err != nil {
 		return nil, fmt.Errorf("lecture des étapes : %w", err)
 	}
 
-	deps, err := queryAllQ(ctx, q, scanDependency,
+	deps, err := queryAll(ctx, q, scanDependency,
 		`SELECT etape_id, prerequis_id FROM etape_dependances ORDER BY etape_id, prerequis_id`)
 	if err != nil {
 		return nil, fmt.Errorf("lecture des dépendances d'étapes : %w", err)
@@ -276,7 +276,7 @@ func (p *PlanningRepo) StartEtape(ctx context.Context, etape planning.Etape, exp
 		 WHERE d.etape_id = $1 AND e.fin_reelle IS NULL
 		 ORDER BY e.nom`
 
-	blocking, err := queryAllQ(ctx, tx, scanName, pending, id)
+	blocking, err := queryAll(ctx, tx, scanName, pending, id)
 	if err != nil {
 		return fmt.Errorf("relecture des prérequis de l'étape %s : %w", etape.ID, err)
 	}
@@ -405,7 +405,7 @@ func insertDependencies(ctx context.Context, tx pgx.Tx, etape planning.Etape) er
 // CreateJalon insère un jalon. Pas de verrou ici : un jalon n'appartient à
 // aucun graphe, aucune écriture concurrente ne peut le rendre incohérent.
 func (p *PlanningRepo) CreateJalon(ctx context.Context, jalon planning.Jalon) error {
-	id, auteur, err := planningWriteIDs(jalon.ID.String(), jalon.CreatedBy.String(), "jalon")
+	id, auteur, err := writeIDs(jalon.ID.String(), jalon.CreatedBy.String(), "jalon")
 	if err != nil {
 		return err
 	}
@@ -442,7 +442,7 @@ func (p *PlanningRepo) JalonByID(ctx context.Context, jalonID planning.ID) (plan
 
 // ListJalons renvoie tous les jalons, par date prévue puis identifiant.
 func (p *PlanningRepo) ListJalons(ctx context.Context) ([]planning.Jalon, error) {
-	jalons, err := queryAllQ(ctx, p.pool, scanJalon,
+	jalons, err := queryAll(ctx, p.pool, scanJalon,
 		`SELECT `+jalonColumns+` FROM jalons ORDER BY date_prevue, id`)
 	if err != nil {
 		return nil, fmt.Errorf("lecture des jalons : %w", err)
@@ -477,21 +477,6 @@ func (p *PlanningRepo) UpdateJalon(ctx context.Context, jalon planning.Jalon, ex
 	}
 
 	return nil
-}
-
-// planningWriteIDs traduit les deux identifiants qu'une écriture porte
-// toujours : celui de l'élément et celui de l'acteur qui l'a créé.
-func planningWriteIDs(elementID, acteurID, label string) (element, auteur pgtype.UUID, err error) {
-	element, err = writeUUID(elementID, label)
-	if err != nil {
-		return pgtype.UUID{}, pgtype.UUID{}, err
-	}
-	auteur, err = writeUUID(acteurID, "acteur")
-	if err != nil {
-		return pgtype.UUID{}, pgtype.UUID{}, err
-	}
-
-	return element, auteur, nil
 }
 
 // etapeDependency est une arête du graphe telle que la table la stocke.
@@ -536,7 +521,7 @@ func scanEtape(row rowScanner) (planning.Etape, error) {
 	err := row.Scan(&id, &etape.Name, &etape.Description, &etape.PlannedStart, &etape.PlannedEnd,
 		&debutReel, &finReelle, &etape.DevisID, &auteur, &etape.CreatedAt, &etape.UpdatedAt)
 	if err != nil {
-		return planning.Etape{}, planningScanError(err, planning.ErrUnknownEtape)
+		return planning.Etape{}, scanError(err, planning.ErrUnknownEtape)
 	}
 
 	etape.ID = planning.ID(id.String())
@@ -562,7 +547,7 @@ func scanJalon(row rowScanner) (planning.Jalon, error) {
 
 	err := row.Scan(&id, &jalon.Name, &jalon.Date, &atteintLe, &auteur, &jalon.CreatedAt, &jalon.UpdatedAt)
 	if err != nil {
-		return planning.Jalon{}, planningScanError(err, planning.ErrUnknownJalon)
+		return planning.Jalon{}, scanError(err, planning.ErrUnknownJalon)
 	}
 
 	jalon.ID = planning.ID(id.String())
@@ -572,37 +557,4 @@ func scanJalon(row rowScanner) (planning.Jalon, error) {
 	jalon.CreatedBy = planning.ActeurID(auteur.String())
 
 	return jalon, nil
-}
-
-// planningScanError traduit l'absence de ligne dans le vocabulaire du domaine.
-func planningScanError(err, unknown error) error {
-	if errors.Is(err, pgx.ErrNoRows) {
-		return unknown
-	}
-	return err
-}
-
-// queryAllQ est [queryAll] pour toute source de requêtes — le pool comme une
-// transaction. La variante sur pool reste telle quelle : les dépôts existants
-// n'ont pas de lecture transactionnelle.
-func queryAllQ[T any](ctx context.Context, q pgQuerier, scan func(rowScanner) (T, error), query string, args ...any) ([]T, error) {
-	rows, err := q.Query(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var collected []T
-	for rows.Next() {
-		decoded, scanErr := scan(rows)
-		if scanErr != nil {
-			return nil, scanErr
-		}
-		collected = append(collected, decoded)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return collected, nil
 }

@@ -41,13 +41,6 @@ const (
 // allStatutsPaiement est la référence de [StatutPaiement.Known].
 var allStatutsPaiement = []StatutPaiement{PaiementImpayee, PaiementPayee}
 
-// AllStatutsPaiement renvoie les statuts reconnus, dans un ordre stable.
-//
-// La tranche renvoyée est une copie : la modifier ne change rien au domaine.
-func AllStatutsPaiement() []StatutPaiement {
-	return slices.Clone(allStatutsPaiement)
-}
-
 // Known indique si le statut fait partie de ceux que le domaine reconnaît.
 func (s StatutPaiement) Known() bool {
 	return slices.Contains(allStatutsPaiement, s)

@@ -236,8 +236,11 @@ type rowScanner interface {
 // décodé : ouvrir, parcourir, refermer, et surtout ne pas oublier rows.Err() —
 // l'erreur qui n'arrive qu'à la fin du parcours et qu'une boucle recopiée
 // oublie une fois sur deux.
-func queryAll[T any](ctx context.Context, pool *pgxpool.Pool, scan func(rowScanner) (T, error), query string, args ...any) ([]T, error) {
-	rows, err := pool.Query(ctx, query, args...)
+//
+// La source de requêtes est un [pgQuerier] : le pool des lectures ordinaires
+// comme la transaction d'une lecture sous verrou passent par le même code.
+func queryAll[T any](ctx context.Context, q pgQuerier, scan func(rowScanner) (T, error), query string, args ...any) ([]T, error) {
+	rows, err := q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -411,11 +414,8 @@ func scanDemande(row rowScanner) (devis.DemandeDevis, error) {
 
 	err := row.Scan(&id, &demande.Lot, &demande.Description, &artisans,
 		&demande.SentAt, &auteur, &demande.CreatedAt, &demande.UpdatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return devis.DemandeDevis{}, devis.ErrUnknownDemande
-	}
 	if err != nil {
-		return devis.DemandeDevis{}, err
+		return devis.DemandeDevis{}, scanError(err, devis.ErrUnknownDemande)
 	}
 
 	demande.Artisans, err = unmarshalArtisans(artisans)
@@ -448,11 +448,8 @@ func scanDevis(row rowScanner) (devis.Devis, error) {
 		&montant, &proposition.ReceivedAt, &validite, &proposition.Notes, &statut,
 		&saisiPar, &decidePar, &decideLe,
 		&proposition.CreatedAt, &proposition.UpdatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return devis.Devis{}, devis.ErrUnknownDevis
-	}
 	if err != nil {
-		return devis.Devis{}, err
+		return devis.Devis{}, scanError(err, devis.ErrUnknownDevis)
 	}
 
 	proposition.ID = devis.ID(id.String())
@@ -558,6 +555,21 @@ func writeUUID(raw, label string) (pgtype.UUID, error) {
 	return uuid, nil
 }
 
+// writeIDs traduit les deux identifiants qu'une écriture porte toujours : celui
+// de l'élément écrit — le label le nomme — et celui de l'acteur qui l'a saisi.
+func writeIDs(elementID, acteurID, label string) (element, auteur pgtype.UUID, err error) {
+	element, err = writeUUID(elementID, label)
+	if err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, err
+	}
+	auteur, err = writeUUID(acteurID, "acteur")
+	if err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, err
+	}
+
+	return element, auteur, nil
+}
+
 // lookupUUID traduit l'identifiant d'une *recherche* et rend l'erreur « inconnu »
 // du domaine quand il est illisible.
 //
@@ -573,6 +585,16 @@ func lookupUUID(raw string, unknown error) (pgtype.UUID, error) {
 		return pgtype.UUID{}, fmt.Errorf("%w : identifiant %q illisible comme uuid", unknown, raw)
 	}
 	return uuid, nil
+}
+
+// scanError traduit l'absence de ligne dans le vocabulaire de l'appelant :
+// pgx.ErrNoRows devient la sentinelle « inconnu » qu'il fournit, toute autre
+// erreur de décodage ressort telle quelle.
+func scanError(err, unknown error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return unknown
+	}
+	return err
 }
 
 // optionalUUID rend l'identifiant du décideur, ou une valeur NULL tant que le

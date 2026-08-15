@@ -391,6 +391,14 @@ func (h *Handler) fail(r *http.Request, err error) {
 		slog.String("error", err.Error()))
 }
 
+// failPage journalise une panne et sert la page d'erreur. Elle vit ici, et non
+// recopiée par domaine : la conduite à tenir sur un 500 est une propriété de
+// l'adapter web, pas de la page qui a échoué.
+func (h *Handler) failPage(w http.ResponseWriter, r *http.Request, err error) {
+	h.fail(r, err)
+	h.render(w, r, pageInternalError, http.StatusInternalServerError, nil)
+}
+
 // parsePages compile un jeu de gabarits par page : chacun combine le gabarit
 // commun, les partiels partagés et la page elle-même. Les pages ne se
 // compilent pas ensemble — leurs blocs « content » entreraient en collision —
