@@ -112,6 +112,30 @@ func (d *DocumentRepo) ListByTarget(ctx context.Context, target document.Target)
 	return documents, nil
 }
 
+// ListByTargets renvoie les pièces rattachées à plusieurs cibles du même type,
+// groupées par identifiant de cible.
+//
+// Une seule requête sert tout le lot : l'égalité sur cible_id devient un ANY,
+// et c'est le même index documents_par_cible de la migration 00008 qui la
+// porte. Le groupement se fait en mémoire, ce qui préserve l'ordre du ORDER BY
+// à l'intérieur de chaque groupe.
+func (d *DocumentRepo) ListByTargets(ctx context.Context, targetType document.TargetType, ids []string) (map[string][]document.Document, error) {
+	const query = `SELECT ` + documentColumns + ` FROM documents
+		WHERE cible_type = $1 AND cible_id = ANY($2) ORDER BY cree_le DESC, id`
+
+	documents, err := queryAll(ctx, d.pool, scanDocument, query, targetType.String(), ids)
+	if err != nil {
+		return nil, fmt.Errorf("lecture des pièces des cibles de type %s : %w", targetType, err)
+	}
+
+	grouped := make(map[string][]document.Document, len(ids))
+	for _, doc := range documents {
+		grouped[doc.Target.ID] = append(grouped[doc.Target.ID], doc)
+	}
+
+	return grouped, nil
+}
+
 // scanDocument reconstruit une pièce depuis une ligne.
 func scanDocument(row rowScanner) (document.Document, error) {
 	var (

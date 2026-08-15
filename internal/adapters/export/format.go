@@ -104,11 +104,15 @@ func formatMontant(montant finance.Montant) string {
 
 // formatDate écrit une date en notation française, ou la chaîne vide pour une
 // date nulle — une facture impayée n'a pas de date de règlement.
+//
+// Les dates sont stockées à minuit UTC mais relues par pgx dans le fuseau local
+// du serveur : sans recadrage, un hôte à l'ouest de Greenwich daterait de la
+// veille chaque pièce du dossier remis à l'assureur.
 func formatDate(instant time.Time) string {
 	if instant.IsZero() {
 		return ""
 	}
-	return instant.Format(dateLayout)
+	return instant.UTC().Format(dateLayout)
 }
 
 // formatPieces énumère les pièces jointes d'une ligne : « nom (catégorie) »,

@@ -174,29 +174,22 @@ type categorieOption struct {
 
 // handleDocumentsIndex sert la liste des pièces.
 func (h *Handler) handleDocumentsIndex(w http.ResponseWriter, r *http.Request) {
-	documents, err := h.documents.Documents(r.Context())
-	if err != nil {
-		h.failDocuments(w, r, fmt.Errorf("lecture des pièces : %w", err))
-		return
-	}
-
-	rows, err := h.newDocumentRows(r, documents)
-	if err != nil {
-		h.failDocuments(w, r, err)
-		return
-	}
-
-	h.render(w, r, pageDocumentsIndex, http.StatusOK, documentsIndexData{
-		Documents: rows,
-		Form:      h.emptyDocumentForm(r),
-		Avis:      h.avisFor(r),
-	})
+	h.renderDocumentsIndex(w, r, http.StatusOK, h.emptyDocumentForm(r))
 }
 
 // newDocumentRows met les pièces sous leur forme d'affichage. Le rattachement
 // à un devis est résolu ici — c'est l'adapter web qui assemble les vues
-// transverses (R2) : une lecture par pièce rattachée, sur un volume minuscule.
+// transverses (R2).
+//
+// La résolution est mémoïsée le temps de la requête, par (type, identifiant) de
+// cible : plusieurs pièces pointent couramment la même étape ou le même devis —
+// les photos d'un lot, les pièces jointes d'une proposition — et sans mémo la
+// page relisait la même cible autant de fois qu'elle porte de pièces. Une cible
+// disparue se mémorise comme les autres : c'est son libellé « disparu » qui est
+// retenu, pas une erreur.
 func (h *Handler) newDocumentRows(r *http.Request, documents []document.Document) ([]documentRow, error) {
+	resolved := make(map[document.Target]targetView, len(documents))
+
 	rows := make([]documentRow, 0, len(documents))
 	for _, doc := range documents {
 		row := documentRow{
@@ -208,9 +201,13 @@ func (h *Handler) newDocumentRows(r *http.Request, documents []document.Document
 			DeposeeLe:      formatDate(doc.CreatedAt),
 		}
 
-		rattachement, err := h.describeTarget(r, doc.Target)
-		if err != nil {
-			return nil, err
+		rattachement, known := resolved[doc.Target]
+		if !known {
+			var err error
+			if rattachement, err = h.describeTarget(r, doc.Target); err != nil {
+				return nil, err
+			}
+			resolved[doc.Target] = rattachement
 		}
 		row.Rattachement, row.RattachementURL = rattachement.label, rattachement.url
 
@@ -502,7 +499,7 @@ func sniffMimeType(file io.ReadSeeker) (string, error) {
 func (h *Handler) rejectDocumentForm(w http.ResponseWriter, r *http.Request, cause error) {
 	messageID := documentMessageID(cause)
 	if messageID == "" {
-		h.failDocuments(w, r, fmt.Errorf("dépôt d'une pièce : %w", cause))
+		h.failPage(w, r, fmt.Errorf("dépôt d'une pièce : %w", cause))
 		return
 	}
 
@@ -533,12 +530,12 @@ func (h *Handler) rejectDocumentOversizedRequest(w http.ResponseWriter, r *http.
 func (h *Handler) renderDocumentsIndex(w http.ResponseWriter, r *http.Request, status int, form documentFormData) {
 	documents, err := h.documents.Documents(r.Context())
 	if err != nil {
-		h.failDocuments(w, r, fmt.Errorf("lecture des pièces : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture des pièces : %w", err))
 		return
 	}
 	rows, err := h.newDocumentRows(r, documents)
 	if err != nil {
-		h.failDocuments(w, r, err)
+		h.failPage(w, r, err)
 		return
 	}
 
@@ -566,7 +563,7 @@ func (h *Handler) handleDocumentDownload(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		// Un contenu introuvable pour des métadonnées connues est une
 		// incohérence de stockage : une panne, pas un 404.
-		h.failDocuments(w, r, fmt.Errorf("ouverture d'une pièce : %w", err))
+		h.failPage(w, r, fmt.Errorf("ouverture d'une pièce : %w", err))
 		return
 	}
 	defer func() {
@@ -629,10 +626,4 @@ func tenthsOf(size, unit int64) string {
 // documentDownloadPath rend l'adresse de téléchargement d'une pièce.
 func documentDownloadPath(id document.ID) string {
 	return documentsPath + "/" + url.PathEscape(id.String()) + documentDownloadSuffix
-}
-
-// failDocuments journalise une panne et sert la page d'erreur.
-func (h *Handler) failDocuments(w http.ResponseWriter, r *http.Request, err error) {
-	h.fail(r, err)
-	h.render(w, r, pageInternalError, http.StatusInternalServerError, nil)
 }

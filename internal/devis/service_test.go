@@ -410,6 +410,42 @@ func TestRetainRejectsSiblings(t *testing.T) {
 	}
 }
 
+// TestDevisRetenu : la question que posent les adapters avant de rattacher une
+// dépense à un lot. Le devis retenu ressort entier — c'est son montant qui
+// devient l'engagement — et les deux refus sont typés séparément, parce que les
+// adapters n'en disent pas la même chose à l'utilisateur.
+func TestDevisRetenu(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	demande := f.demande(t)
+	choisi := f.devisRecu(t, demande.ID, "Toiture Ain", 1_180_050)
+	concurrent := f.devisRecu(t, demande.ID, "Charpentes du Val", 1_250_000)
+
+	if _, err := f.service.DevisRetenu(t.Context(), choisi.ID); !errors.Is(err, devis.ErrDevisNotRetenu) {
+		t.Errorf("DevisRetenu() avant décision = %v, attendu %v", err, devis.ErrDevisNotRetenu)
+	}
+
+	if _, err := f.service.Retain(t.Context(), choisi.ID, acteur); err != nil {
+		t.Fatalf("Retain() échoué : %v", err)
+	}
+
+	retenu, err := f.service.DevisRetenu(t.Context(), choisi.ID)
+	if err != nil {
+		t.Fatalf("DevisRetenu() échoué : %v", err)
+	}
+	if retenu.ID != choisi.ID || retenu.Montant != choisi.Montant || retenu.Statut != devis.StatutRetenu {
+		t.Errorf("DevisRetenu() = %+v", retenu)
+	}
+
+	if _, err := f.service.DevisRetenu(t.Context(), concurrent.ID); !errors.Is(err, devis.ErrDevisNotRetenu) {
+		t.Errorf("DevisRetenu(concurrent refusé) = %v, attendu %v", err, devis.ErrDevisNotRetenu)
+	}
+	if _, err := f.service.DevisRetenu(t.Context(), "devis-inexistant"); !errors.Is(err, devis.ErrUnknownDevis) {
+		t.Errorf("DevisRetenu(inconnu) = %v, attendu %v", err, devis.ErrUnknownDevis)
+	}
+}
+
 // TestRetainTwiceRefused : la seconde décision n'a nulle part où aller, que ce
 // soit sur le devis déjà retenu ou sur un concurrent devenu refusé.
 func TestRetainTwiceRefused(t *testing.T) {

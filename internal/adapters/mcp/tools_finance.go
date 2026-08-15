@@ -359,24 +359,29 @@ func (h *Handler) devisRetenus(ctx context.Context) ([]retenuInfo, error) {
 	return retenus, nil
 }
 
-// resolveRetenu relit le devis désigné et vérifie qu'il est bien RETENU — la
-// même vérification que l'adapter web : le domaine finance ne sait pas lire un
-// devis (R2), et elle rend le montant engagé que l'invariant des acomptes
-// exige. Un identifiant vide est le choix « hors devis » : rien à résoudre.
+// resolveRetenu relit le devis désigné et vérifie qu'il est bien RETENU. La
+// question est posée au domaine devis ([devis.Service.DevisRetenu]), que
+// l'adapter web interroge de la même façon : deux copies de la règle dans deux
+// familles d'adapters — qui ne peuvent pas se partager de code (R4) —
+// finiraient par diverger. Ne reste ici que la traduction des refus dans le
+// vocabulaire d'erreur des tools.
+//
+// Le montant engagé, lui, reste entre les mains de l'appelant : c'est lui qui
+// le transmet au domaine finance en simple valeur (R1/R2). Un identifiant vide
+// est le choix « hors devis » : rien à résoudre.
 func (h *Handler) resolveRetenu(ctx context.Context, devisID string) (retenuInfo, error) {
 	if devisID == "" {
 		return retenuInfo{}, nil
 	}
 
-	proposition, err := h.devis.Devis(ctx, devis.ID(devisID))
-	if errors.Is(err, devis.ErrUnknownDevis) {
+	proposition, err := h.devis.DevisRetenu(ctx, devis.ID(devisID))
+	switch {
+	case errors.Is(err, devis.ErrUnknownDevis):
 		return retenuInfo{}, fmt.Errorf("%w : %s", errDevisRattachementInconnu, devisID)
-	}
-	if err != nil {
-		return retenuInfo{}, fmt.Errorf("résolution du devis de rattachement : %w", err)
-	}
-	if proposition.Statut != devis.StatutRetenu {
+	case errors.Is(err, devis.ErrDevisNotRetenu):
 		return retenuInfo{}, fmt.Errorf("%w : %s", errDevisNonRetenu, devisID)
+	case err != nil:
+		return retenuInfo{}, fmt.Errorf("résolution du devis de rattachement : %w", err)
 	}
 
 	return retenuInfo{id: proposition.ID.String(), montant: proposition.Montant}, nil

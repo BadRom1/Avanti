@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -176,11 +175,8 @@ func scanUser(row interface{ Scan(dest ...any) error }) (identity.User, error) {
 	)
 
 	err := row.Scan(&id, &user.Email, &user.DisplayName, &hash, &role, &user.Active, &user.CreatedAt, &user.UpdatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return identity.User{}, identity.ErrUnknownUser
-	}
 	if err != nil {
-		return identity.User{}, err
+		return identity.User{}, scanError(err, identity.ErrUnknownUser)
 	}
 
 	user.ID = identity.ID(id.String())

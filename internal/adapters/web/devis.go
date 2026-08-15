@@ -186,7 +186,7 @@ type demandeCard struct {
 func (h *Handler) handleDevisIndex(w http.ResponseWriter, r *http.Request) {
 	comparaisons, err := h.devis.Comparaisons(r.Context())
 	if err != nil {
-		h.failDevis(w, r, fmt.Errorf("lecture des demandes de devis : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture des demandes de devis : %w", err))
 		return
 	}
 
@@ -267,7 +267,7 @@ func (h *Handler) emptyDemandeForm() demandeFormData {
 // handleCreateDemande enregistre une nouvelle consultation.
 func (h *Handler) handleCreateDemande(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.failDevis(w, r, fmt.Errorf("lecture du formulaire de demande : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture du formulaire de demande : %w", err))
 		return
 	}
 
@@ -343,7 +343,7 @@ func artisansFromRequest(r *http.Request) []devis.Artisan {
 func (h *Handler) rejectDemandeForm(w http.ResponseWriter, r *http.Request, form demandeFormData, err error) {
 	messageID := devisMessageID(err)
 	if messageID == "" {
-		h.failDevis(w, r, fmt.Errorf("création d'une demande de devis : %w", err))
+		h.failPage(w, r, fmt.Errorf("création d'une demande de devis : %w", err))
 		return
 	}
 
@@ -471,7 +471,7 @@ func (h *Handler) handleDemande(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		h.failDevis(w, r, fmt.Errorf("lecture d'une demande de devis : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture d'une demande de devis : %w", err))
 		return
 	}
 
@@ -483,7 +483,7 @@ func (h *Handler) handleDemande(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) renderComparaison(w http.ResponseWriter, r *http.Request, status int, comparaison devis.Comparaison, form devisFormData) {
 	pieces, err := h.piecesForComparaison(r, comparaison)
 	if err != nil {
-		h.failDevis(w, r, fmt.Errorf("lecture des pièces des propositions : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture des pièces des propositions : %w", err))
 		return
 	}
 
@@ -644,7 +644,7 @@ func (h *Handler) emptyDevisForm(comparaison devis.Comparaison) devisFormData {
 // handleRecordDevis enregistre un devis reçu.
 func (h *Handler) handleRecordDevis(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.failDevis(w, r, fmt.Errorf("lecture du formulaire de devis : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture du formulaire de devis : %w", err))
 		return
 	}
 
@@ -706,7 +706,7 @@ func devisInputFromRequest(r *http.Request, demandeID devis.ID) (devis.DevisInpu
 func (h *Handler) rejectDevisForm(w http.ResponseWriter, r *http.Request, demandeID devis.ID, cause error) {
 	messageID := devisMessageID(cause)
 	if messageID == "" {
-		h.failDevis(w, r, fmt.Errorf("enregistrement d'un devis reçu : %w", cause))
+		h.failPage(w, r, fmt.Errorf("enregistrement d'un devis reçu : %w", cause))
 		return
 	}
 
@@ -716,7 +716,7 @@ func (h *Handler) rejectDevisForm(w http.ResponseWriter, r *http.Request, demand
 		return
 	}
 	if err != nil {
-		h.failDevis(w, r, fmt.Errorf("lecture d'une demande de devis : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture d'une demande de devis : %w", err))
 		return
 	}
 
@@ -768,7 +768,7 @@ func (h *Handler) decide(
 		// relit avec l'avis correspondant, et l'état affiché est alors le vrai.
 		h.redirectToComparaisonAfterConflict(w, r, devisID)
 	default:
-		h.failDevis(w, r, fmt.Errorf("décision sur un devis : %w", err))
+		h.failPage(w, r, fmt.Errorf("décision sur un devis : %w", err))
 	}
 }
 
@@ -821,12 +821,6 @@ func (h *Handler) avisFor(r *http.Request) avisView {
 // translate rend un message du catalogue dans la langue de la requête.
 func (h *Handler) translate(r *http.Request, messageID string, pairs ...string) string {
 	return h.catalog.Translator(r.Header.Get("Accept-Language")).T(messageID, pairs...)
-}
-
-// failDevis journalise une panne et sert la page d'erreur.
-func (h *Handler) failDevis(w http.ResponseWriter, r *http.Request, err error) {
-	h.fail(r, err)
-	h.render(w, r, pageInternalError, http.StatusInternalServerError, nil)
 }
 
 // acteurFrom traduit l'identité de la requête en valeur pour le domaine.

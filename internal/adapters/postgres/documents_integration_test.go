@@ -173,6 +173,56 @@ func TestDocumentListByTarget(t *testing.T) {
 	}
 }
 
+// TestDocumentListByTargets : la lecture groupée rend les pièces de plusieurs
+// cibles en une requête, indexées par identifiant de cible, sans mélanger les
+// cibles ni ramener celles d'un autre type. Une cible sans pièce n'a pas
+// d'entrée dans la carte.
+func TestDocumentListByTargets(t *testing.T) {
+	t.Parallel()
+
+	repo, _ := newDocumentRepo(t)
+	const (
+		premiere = "6bbd562d-51ab-4bee-ab5b-1b9ec2a08ec5"
+		seconde  = "0b1cba0a-8ba3-4fd8-8f8f-2c1e1d0f8a91"
+	)
+
+	facture := testDocument(t, "facture.pdf")
+	facture.Target = document.Target{Type: document.TargetFacture, ID: premiere}
+	avoir := testDocument(t, "avoir.pdf")
+	avoir.Target = document.Target{Type: document.TargetFacture, ID: seconde}
+	// Même identifiant de cible, autre type : le filtre sur cible_type doit
+	// l'écarter.
+	homonyme := testDocument(t, "homonyme.pdf")
+	homonyme.Target = document.Target{Type: document.TargetDevis, ID: premiere}
+
+	for _, doc := range []document.Document{facture, avoir, homonyme} {
+		if err := repo.Create(t.Context(), doc); err != nil {
+			t.Fatalf("Create(%s) échoué : %v", doc.FileName, err)
+		}
+	}
+
+	grouped, err := repo.ListByTargets(t.Context(), document.TargetFacture,
+		[]string{premiere, seconde, "sans-piece"})
+	if err != nil {
+		t.Fatalf("ListByTargets() échoué : %v", err)
+	}
+
+	if len(grouped) != 2 {
+		t.Fatalf("ListByTargets() = %+v, attendu deux cibles", grouped)
+	}
+	if pieces := grouped[premiere]; len(pieces) != 1 || pieces[0].FileName != "facture.pdf" {
+		t.Errorf("pièces de la première cible = %+v", pieces)
+	}
+	if pieces := grouped[seconde]; len(pieces) != 1 || pieces[0].FileName != "avoir.pdf" {
+		t.Errorf("pièces de la seconde cible = %+v", pieces)
+	}
+
+	vide, err := repo.ListByTargets(t.Context(), document.TargetEtape, []string{"rien"})
+	if err != nil || len(vide) != 0 {
+		t.Errorf("ListByTargets(sans pièce) = %+v, %v", vide, err)
+	}
+}
+
 // TestDocumentTableConstraints : les contraintes CHECK doublent le domaine, et
 // une écriture qui les contourne est refusée par la base elle-même.
 func TestDocumentTableConstraints(t *testing.T) {

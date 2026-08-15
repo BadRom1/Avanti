@@ -4,6 +4,7 @@ import (
 	"html"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -477,6 +478,61 @@ func TestPlanningCorruptedGuardIsRejected(t *testing.T) {
 	// Rien n'a bougé.
 	if etape := etapeEnregistree(t, s, "Charpente"); etape.Statut() != planning.StatutPrevue {
 		t.Errorf("la garde corrompue a laissé passer une écriture : statut = %q", etape.Statut())
+	}
+}
+
+// TestPlanningTooManyDependenciesIsRejected : une soumission au-delà de la
+// borne des prérequis est une saisie refusée en 422 avec son message — jamais
+// une panne 500. La borne est celle du domaine (50) ; l'adapter recopie tout ce
+// que le formulaire porte, c'est donc le refus traduit qui la fait respecter.
+func TestPlanningTooManyDependenciesIsRejected(t *testing.T) {
+	t.Parallel()
+
+	s := newSite(t)
+	b := newBrowser(t, s.handler)
+	b.login(ownerEmail)
+
+	if result := posterEtape(t, b, "Gros œuvre", "2500-01-01", "2500-01-31"); result.Status != http.StatusSeeOther {
+		t.Fatalf("création de l'étape : statut = %d", result.Status)
+	}
+	grosOeuvre := etapeEnregistree(t, s, "Gros œuvre")
+
+	// Cinquante et un prérequis : un de trop. Les identifiants n'ont pas à
+	// désigner des étapes réelles — la borne se vérifie avant l'existence.
+	trop := make([]string, 0, 51)
+	for i := range 51 {
+		trop = append(trop, "00000000-0000-4000-8000-"+strconv.Itoa(100000000000+i))
+	}
+
+	// À la création.
+	result := posterEtape(t, b, "Charpente", "2500-02-01", "2500-02-20", trop...)
+	if result.Status != http.StatusUnprocessableEntity {
+		t.Fatalf("création avec 51 prérequis : statut = %d, attendu 422 — corps : %.300s", result.Status, result.Body)
+	}
+	if !strings.Contains(result.Body, "plus de 50 prérequis") {
+		t.Errorf("le refus des prérequis trop nombreux n'est pas expliqué — corps : %.300s", result.Body)
+	}
+	if _, ok := s.planning.etapeParNom("Charpente"); ok {
+		t.Error("l'étape refusée a tout de même été enregistrée")
+	}
+
+	// À la modification.
+	fields := url.Values{
+		"nom":         {"Gros œuvre"},
+		"debut_prevu": {"2500-01-01"},
+		"fin_prevue":  {"2500-01-31"},
+		"dependances": trop,
+		"modifie_le":  {modifieLeDe(t, s, "Gros œuvre")},
+	}
+	result = b.post("/planning/etapes/"+grosOeuvre.ID.String(), fields)
+	if result.Status != http.StatusUnprocessableEntity {
+		t.Fatalf("modification avec 51 prérequis : statut = %d, attendu 422 — corps : %.300s", result.Status, result.Body)
+	}
+	if !strings.Contains(result.Body, "plus de 50 prérequis") {
+		t.Error("le refus des prérequis trop nombreux n'est pas expliqué (modification)")
+	}
+	if etape := etapeEnregistree(t, s, "Gros œuvre"); len(etape.DependsOn) != 0 {
+		t.Errorf("la modification refusée a été appliquée : %d prérequis enregistrés", len(etape.DependsOn))
 	}
 }
 

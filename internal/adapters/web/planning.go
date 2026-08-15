@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/Romain-Badino/Avanti/internal/identity"
@@ -79,6 +80,7 @@ var planningErrorMessages = []struct {
 	{planning.ErrMissingDate, "devis.erreur.date_manquante"},
 	{planning.ErrInvalidPlannedRange, "planning.erreur.plage_invalide"},
 	{planning.ErrInvalidDevisID, "finance.erreur.devis_invalide"},
+	{planning.ErrTooManyDependencies, "planning.erreur.dependances_trop_nombreuses"},
 	{planning.ErrSelfDependency, "planning.erreur.dependance_invalide"},
 	{planning.ErrDuplicateDependency, "planning.erreur.dependance_invalide"},
 	{planning.ErrUnknownDependency, "planning.erreur.dependance_inconnue"},
@@ -260,7 +262,7 @@ func (h *Handler) newGanttData(r *http.Request, view planning.GanttView) ganttDa
 			Cells:       ganttBarCells(row.PlannedFrom, row.PlannedTo, ganttPlannedClass(row)),
 		}
 		if row.EnRetard {
-			ligne.Retard = h.translate(r, "planning.retard", "Jours", itoa(row.RetardJours))
+			ligne.Retard = h.translate(r, "planning.retard", "Jours", strconv.Itoa(row.RetardJours))
 		}
 		if row.Started {
 			ligne.Reelle = true
@@ -277,7 +279,7 @@ func (h *Handler) newGanttData(r *http.Request, view planning.GanttView) ganttDa
 			Cells:  ganttBarCells(jalon.Position, jalon.Position+1, ganttJalonClass(jalon)),
 		}
 		if jalon.EnRetard {
-			ligne.Retard = h.translate(r, "planning.retard", "Jours", itoa(jalon.RetardJours))
+			ligne.Retard = h.translate(r, "planning.retard", "Jours", strconv.Itoa(jalon.RetardJours))
 		}
 		data.Jalons = append(data.Jalons, ligne)
 	}
@@ -325,11 +327,6 @@ func newGanttAxis(view planning.GanttView) []ganttAxisTick {
 	}
 
 	return ticks
-}
-
-// itoa évite de traîner strconv dans toutes les constructions de vues.
-func itoa(n int) string {
-	return fmt.Sprintf("%d", n)
 }
 
 // --- La page --------------------------------------------------------------------
@@ -462,19 +459,19 @@ func (h *Handler) renderPlanningIndex(
 ) {
 	etapes, err := h.planning.Etapes(r.Context())
 	if err != nil {
-		h.failPlanning(w, r, fmt.Errorf("lecture des étapes : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture des étapes : %w", err))
 		return
 	}
 
 	jalons, err := h.planning.Jalons(r.Context())
 	if err != nil {
-		h.failPlanning(w, r, fmt.Errorf("lecture des jalons : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture des jalons : %w", err))
 		return
 	}
 
 	retenus, err := h.devisRetenus(r.Context())
 	if err != nil {
-		h.failPlanning(w, r, fmt.Errorf("lecture des devis retenus : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture des devis retenus : %w", err))
 		return
 	}
 
@@ -532,7 +529,7 @@ func (h *Handler) newJalonRows(r *http.Request, jalons []planning.Jalon, today t
 			ModifieLe:     jalon.UpdatedAt.Format(time.RFC3339Nano),
 		}
 		if row.EnRetard {
-			row.Retard = h.translate(r, "planning.retard", "Jours", itoa(jalon.RetardConstate(today)))
+			row.Retard = h.translate(r, "planning.retard", "Jours", strconv.Itoa(jalon.RetardConstate(today)))
 		}
 		rows = append(rows, row)
 	}
@@ -608,7 +605,7 @@ func (h *Handler) newEtapeRows(r *http.Request, etapes []planning.Etape, view pl
 			ModifieLe:    etape.UpdatedAt.Format(time.RFC3339Nano),
 		}
 		if derived.EnRetard {
-			row.Retard = h.translate(r, "planning.retard", "Jours", itoa(derived.RetardJours))
+			row.Retard = h.translate(r, "planning.retard", "Jours", strconv.Itoa(derived.RetardJours))
 		}
 		rows = append(rows, row)
 	}
@@ -664,7 +661,7 @@ func dependanceOptions(etapes []planning.Etape, self planning.ID, checked []plan
 // handleCreateEtape crée une étape.
 func (h *Handler) handleCreateEtape(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.failPlanning(w, r, fmt.Errorf("lecture du formulaire d'étape : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture du formulaire d'étape : %w", err))
 		return
 	}
 
@@ -734,13 +731,13 @@ func dependancesFrom(r *http.Request) []planning.ID {
 func (h *Handler) rejectEtapeForm(w http.ResponseWriter, r *http.Request, cause error) {
 	messageID := planningMessageID(cause)
 	if messageID == "" {
-		h.failPlanning(w, r, fmt.Errorf("création d'une étape : %w", cause))
+		h.failPage(w, r, fmt.Errorf("création d'une étape : %w", cause))
 		return
 	}
 
 	etapes, retenus, err := h.planningFormSources(r)
 	if err != nil {
-		h.failPlanning(w, r, err)
+		h.failPage(w, r, err)
 		return
 	}
 
@@ -789,13 +786,13 @@ func (h *Handler) handleEtapeModifierForm(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err != nil {
-		h.failPlanning(w, r, fmt.Errorf("lecture d'une étape : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture d'une étape : %w", err))
 		return
 	}
 
 	etapes, retenus, err := h.planningFormSources(r)
 	if err != nil {
-		h.failPlanning(w, r, err)
+		h.failPage(w, r, err)
 		return
 	}
 
@@ -829,12 +826,12 @@ func (h *Handler) handleUpdateEtape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		h.failPlanning(w, r, fmt.Errorf("lecture d'une étape : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture d'une étape : %w", err))
 		return
 	}
 
 	if parseErr := r.ParseForm(); parseErr != nil {
-		h.failPlanning(w, r, fmt.Errorf("lecture du formulaire de modification : %w", parseErr))
+		h.failPage(w, r, fmt.Errorf("lecture du formulaire de modification : %w", parseErr))
 		return
 	}
 
@@ -886,13 +883,13 @@ func (h *Handler) updateEtapeFromForm(r *http.Request, id planning.ID) error {
 func (h *Handler) rejectUpdateEtapeForm(w http.ResponseWriter, r *http.Request, current planning.Etape, cause error) {
 	messageID := planningMessageID(cause)
 	if messageID == "" {
-		h.failPlanning(w, r, fmt.Errorf("modification d'une étape : %w", cause))
+		h.failPage(w, r, fmt.Errorf("modification d'une étape : %w", cause))
 		return
 	}
 
 	etapes, retenus, err := h.planningFormSources(r)
 	if err != nil {
-		h.failPlanning(w, r, err)
+		h.failPage(w, r, err)
 		return
 	}
 
@@ -969,12 +966,12 @@ func (h *Handler) applyPlanningTransition(
 		h.handleNotFound(w, r)
 		return
 	case lookupErr != nil:
-		h.failPlanning(w, r, fmt.Errorf("lecture avant transition : %w", lookupErr))
+		h.failPage(w, r, fmt.Errorf("lecture avant transition : %w", lookupErr))
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		h.failPlanning(w, r, fmt.Errorf("lecture du formulaire de transition : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture du formulaire de transition : %w", err))
 		return
 	}
 
@@ -998,7 +995,7 @@ func (h *Handler) applyPlanningTransition(
 		h.renderPlanningIndex(w, r, http.StatusUnprocessableEntity, nil, nil,
 			h.translate(r, planningMessageID(err)))
 	default:
-		h.failPlanning(w, r, fmt.Errorf("transition du planning : %w", err))
+		h.failPage(w, r, fmt.Errorf("transition du planning : %w", err))
 	}
 }
 
@@ -1018,7 +1015,7 @@ func parseModifieLe(r *http.Request) (time.Time, error) {
 // handleCreateJalon crée un jalon.
 func (h *Handler) handleCreateJalon(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.failPlanning(w, r, fmt.Errorf("lecture du formulaire de jalon : %w", err))
+		h.failPage(w, r, fmt.Errorf("lecture du formulaire de jalon : %w", err))
 		return
 	}
 
@@ -1052,7 +1049,7 @@ func (h *Handler) createJalonFromForm(r *http.Request) error {
 func (h *Handler) rejectJalonForm(w http.ResponseWriter, r *http.Request, cause error) {
 	messageID := planningMessageID(cause)
 	if messageID == "" {
-		h.failPlanning(w, r, fmt.Errorf("création d'un jalon : %w", cause))
+		h.failPage(w, r, fmt.Errorf("création d'un jalon : %w", cause))
 		return
 	}
 
@@ -1076,10 +1073,4 @@ func planningActeurFrom(r *http.Request) planning.ActeurID {
 // planningElementPath rend l'adresse d'une action sur un élément du planning.
 func planningElementPath(base string, id planning.ID, suffix string) string {
 	return base + "/" + url.PathEscape(id.String()) + suffix
-}
-
-// failPlanning journalise une panne et sert la page d'erreur.
-func (h *Handler) failPlanning(w http.ResponseWriter, r *http.Request, err error) {
-	h.fail(r, err)
-	h.render(w, r, pageInternalError, http.StatusInternalServerError, nil)
 }

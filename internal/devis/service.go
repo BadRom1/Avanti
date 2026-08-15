@@ -290,6 +290,30 @@ func (s *Service) Devis(ctx context.Context, id ID) (Devis, error) {
 	return s.repo.DevisByID(ctx, id)
 }
 
+// DevisRetenu lit un devis et vérifie qu'il est RETENU, c'est-à-dire qu'il
+// engage réellement un montant.
+//
+// C'est la question que se posent les adapters au moment de rattacher une
+// dépense à un lot : web et MCP la posaient chacun de leur côté, en recopiant
+// la même résolution — et deux copies d'une règle métier finissent par diverger.
+// Un devis inconnu ressort en [ErrUnknownDevis], un devis qui n'est pas retenu
+// en [ErrDevisNotRetenu] ; c'est l'adapter qui traduit ensuite chacun dans son
+// vocabulaire d'erreur.
+//
+// Le devis entier est rendu, et non son seul montant : c'est l'appelant qui
+// transmet le montant engagé au domaine finance, en simple valeur (R1/R2).
+func (s *Service) DevisRetenu(ctx context.Context, id ID) (Devis, error) {
+	proposition, err := s.repo.DevisByID(ctx, id)
+	if err != nil {
+		return Devis{}, err
+	}
+	if proposition.Statut != StatutRetenu {
+		return Devis{}, fmt.Errorf("%w : %s", ErrDevisNotRetenu, id)
+	}
+
+	return proposition, nil
+}
+
 // AllDevis renvoie tous les devis, toutes consultations confondues.
 func (s *Service) AllDevis(ctx context.Context) ([]Devis, error) {
 	return s.repo.ListDevis(ctx)

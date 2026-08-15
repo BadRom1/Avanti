@@ -26,6 +26,12 @@ type Repository interface {
 	// récemment déposée à la plus ancienne. Une cible sans pièce rend une liste
 	// vide, pas une erreur.
 	ListByTarget(ctx context.Context, target Target) ([]Document, error)
+	// ListByTargets renvoie, en UNE lecture, les pièces rattachées à plusieurs
+	// cibles du même type, groupées par identifiant de cible et dans le même
+	// ordre que [Repository.ListByTarget] à l'intérieur de chaque groupe. Une
+	// cible sans pièce n'a pas d'entrée dans la carte rendue, pas une entrée
+	// vide.
+	ListByTargets(ctx context.Context, targetType TargetType, ids []string) (map[string][]Document, error)
 }
 
 // Storage est le port du contenu binaire — et le point d'extension officiel
@@ -294,6 +300,45 @@ func (s *Service) DocumentsByTarget(ctx context.Context, target Target) ([]Docum
 	}
 
 	return s.repo.ListByTarget(ctx, normalized)
+}
+
+// DocumentsByTargets renvoie les pièces de plusieurs cibles d'un même type,
+// groupées par identifiant de cible.
+//
+// C'est la lecture d'un bloc que réclame tout tableau qui liste ses cibles avec
+// leurs pièces — les factures et leurs justificatifs : une lecture par ligne
+// ferait grandir les allers-retours avec la base au rythme de ce qui s'affiche.
+// Les cibles sont normalisées et dédupliquées avec la même rigueur que dans
+// [Service.DocumentsByTarget] : un identifiant vide est refusé plutôt que
+// silencieusement ignoré. Une liste d'identifiants vide rend une carte vide,
+// sans lecture.
+func (s *Service) DocumentsByTargets(ctx context.Context, targetType TargetType, ids []string) (map[string][]Document, error) {
+	if len(ids) == 0 {
+		return map[string][]Document{}, nil
+	}
+
+	// Le type de cible est le même pour toutes : c'est la forme normalisée que
+	// NormalizeTarget rend, prise sur la première cible validée.
+	var normalizedType TargetType
+	uniques := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		normalized, err := NormalizeTarget(Target{Type: targetType, ID: id})
+		if err != nil {
+			return nil, err
+		}
+		if normalized.Zero() {
+			return nil, fmt.Errorf("%w : cible vide", ErrInvalidTarget)
+		}
+		normalizedType = normalized.Type
+		if seen[normalized.ID] {
+			continue
+		}
+		seen[normalized.ID] = true
+		uniques = append(uniques, normalized.ID)
+	}
+
+	return s.repo.ListByTargets(ctx, normalizedType, uniques)
 }
 
 // Open relit les métadonnées d'une pièce puis ouvre son contenu. Le lecteur
