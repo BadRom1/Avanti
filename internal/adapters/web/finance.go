@@ -610,10 +610,10 @@ func (h *Handler) newFactureRows(r *http.Request, factures []finance.Facture, re
 			Montant:     formatMontantFinance(facture.Montant),
 			Notes:       facture.Notes,
 			Paiement:    h.translate(r, "finance.paiement."+facture.Paiement.String()),
-			PayeeLe:     formatDate(facture.PaidAt),
+			PayeeLe:     formatInstant(facture.PaidAt),
 			Assurance:   h.translate(r, "finance.assurance."+suivi.Statut.String()),
-			EnvoyeeLe:   formatDate(suivi.SentAt),
-			RembourseLe: formatDate(suivi.RefundedAt),
+			EnvoyeeLe:   formatInstant(suivi.SentAt),
+			RembourseLe: formatInstant(suivi.RefundedAt),
 
 			PeutPayer:      canWrite && facture.Paiement == finance.PaiementImpayee,
 			PeutEnvoyer:    canWrite && suivi.Statut == finance.AssuranceNonEnvoyee,
@@ -659,8 +659,8 @@ func (h *Handler) newAcompteRows(r *http.Request, acomptes []finance.Acompte, re
 			// L'accord suit la nature de la pièce : un acompte est envoyé,
 			// une facture est envoyée — d'où un préfixe de clés distinct.
 			Assurance:   h.translate(r, "finance.assurance_acompte."+suivi.Statut.String()),
-			EnvoyeeLe:   formatDate(suivi.SentAt),
-			RembourseLe: formatDate(suivi.RefundedAt),
+			EnvoyeeLe:   formatInstant(suivi.SentAt),
+			RembourseLe: formatInstant(suivi.RefundedAt),
 
 			PeutEnvoyer:    canWrite && suivi.Statut == finance.AssuranceNonEnvoyee,
 			PeutRembourser: canWrite && suivi.Statut == finance.AssuranceEnvoyee,
@@ -702,7 +702,7 @@ func (h *Handler) emptyFactureForm(retenus []retenuInfo) factureFormData {
 	return factureFormData{
 		Action:    financesFacturesPath,
 		Devis:     devisOptions(retenus, ""),
-		DatePiece: formatDateInput(h.now()),
+		DatePiece: formatDateInput(civilDay(h.now())),
 	}
 }
 
@@ -711,7 +711,7 @@ func (h *Handler) emptyAcompteForm(r *http.Request, retenus []retenuInfo) acompt
 	return acompteFormData{
 		Action:    financesAcomptesPath,
 		Devis:     devisOptions(retenus, ""),
-		DatePiece: formatDateInput(h.now()),
+		DatePiece: formatDateInput(civilDay(h.now())),
 		Moyens:    h.moyenOptions(r, ""),
 	}
 }

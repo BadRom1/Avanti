@@ -259,7 +259,7 @@ func (h *Handler) emptyDemandeForm() demandeFormData {
 	return demandeFormData{
 		Action:    devisDemandesPath,
 		RetourURL: devisPath,
-		DateEnvoi: formatDateInput(h.now()),
+		DateEnvoi: formatDateInput(civilDay(h.now())),
 		Artisans:  make([]artisanFormLine, artisanLines),
 	}
 }
@@ -631,7 +631,7 @@ func (h *Handler) newDevisRows(r *http.Request, comparaison devis.Comparaison) [
 func (h *Handler) emptyDevisForm(comparaison devis.Comparaison) devisFormData {
 	form := devisFormData{
 		Action:        demandePath(comparaison.Demande.ID) + "/devis",
-		DateReception: formatDateInput(h.now()),
+		DateReception: formatDateInput(civilDay(h.now())),
 	}
 
 	for _, artisan := range comparaison.Demande.Artisans {

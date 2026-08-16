@@ -102,17 +102,38 @@ func formatMontant(montant finance.Montant) string {
 	return sb.String()
 }
 
-// formatDate écrit une date en notation française, ou la chaîne vide pour une
-// date nulle — une facture impayée n'a pas de date de règlement.
+// formatDate écrit une DATE CIVILE en notation française, ou la chaîne vide
+// pour une date nulle — un acompte n'a pas de date de remboursement tant que
+// l'assurance n'a rien versé.
 //
-// Les dates sont stockées à minuit UTC mais relues par pgx dans le fuseau local
-// du serveur : sans recadrage, un hôte à l'ouest de Greenwich daterait de la
-// veille chaque pièce du dossier remis à l'assureur.
+// Les dates civiles — la date que porte la pièce — sont stockées à minuit UTC
+// mais relues par pgx dans le fuseau local du serveur : sans recadrage, un hôte
+// à l'ouest de Greenwich daterait de la veille chaque pièce du dossier remis à
+// l'assureur.
+//
+// Un horodatage réel (règlement, envoi, remboursement) se met en forme avec
+// [formatInstant] : le recadrage UTC le daterait de la veille à l'est de
+// Greenwich, et c'est cette date-là que lit l'assureur.
 func formatDate(instant time.Time) string {
 	if instant.IsZero() {
 		return ""
 	}
 	return instant.UTC().Format(dateLayout)
+}
+
+// formatInstant écrit le jour d'un HORODATAGE en notation française, dans le
+// fuseau du serveur — voir [formatDate] pour le partage des rôles.
+func formatInstant(instant time.Time) string {
+	return formatInstantIn(instant, time.Local)
+}
+
+// formatInstantIn est [formatInstant] avec un fuseau explicite, la couture par
+// laquelle les tests vérifient le recadrage sans toucher à `time.Local`.
+func formatInstantIn(instant time.Time, loc *time.Location) string {
+	if instant.IsZero() {
+		return ""
+	}
+	return instant.In(loc).Format(dateLayout)
 }
 
 // formatPieces énumère les pièces jointes d'une ligne : « nom (catégorie) »,
