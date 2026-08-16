@@ -105,7 +105,7 @@ func writePDFHead(doc *fpdf.Fpdf, tr func(string) string, dossier finance.Dossie
 	if dossier.Intitule != "" {
 		doc.CellFormat(0, pdfRowHeight, tr(dossier.Intitule), "", 1, "L", false, 0, "")
 	}
-	doc.CellFormat(0, pdfRowHeight, tr(pdfGenere+" "+formatDate(dossier.GeneratedAt)), "", 1, "L", false, 0, "")
+	doc.CellFormat(0, pdfRowHeight, tr(pdfGenere+" "+formatInstant(dossier.GeneratedAt)), "", 1, "L", false, 0, "")
 	doc.Ln(3)
 }
 
@@ -197,11 +197,11 @@ func writeFacturesSection(doc *fpdf.Fpdf, tr func(string) string, factures []fin
 			formatDate(ligne.Date),
 			formatMontant(ligne.Montant) + pdfEuroSuffix,
 			paiementLabel(ligne.Paiement),
-			formatDate(ligne.PaidAt),
+			formatInstant(ligne.PaidAt),
 			assuranceLabel(ligne.Assurance.Statut),
-			formatDate(ligne.Assurance.SentAt),
+			formatInstant(ligne.Assurance.SentAt),
 			pdfRembourse(ligne.Assurance),
-			formatDate(ligne.Assurance.RefundedAt),
+			formatInstant(ligne.Assurance.RefundedAt),
 		})
 		writePiecesRow(doc, tr, ligne.Pieces)
 	}
@@ -228,9 +228,9 @@ func writeAcomptesSection(doc *fpdf.Fpdf, tr func(string) string, acomptes []fin
 			// L'accord suit la nature de la pièce : un acompte est envoyé,
 			// une facture est envoyée.
 			assuranceAcompteLabel(ligne.Assurance.Statut),
-			formatDate(ligne.Assurance.SentAt),
+			formatInstant(ligne.Assurance.SentAt),
 			pdfRembourse(ligne.Assurance),
-			formatDate(ligne.Assurance.RefundedAt),
+			formatInstant(ligne.Assurance.RefundedAt),
 		})
 		writePiecesRow(doc, tr, ligne.Pieces)
 	}

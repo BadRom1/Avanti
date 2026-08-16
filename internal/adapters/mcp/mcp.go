@@ -329,11 +329,32 @@ func parseDate(raw, label string) (time.Time, error) {
 	return date, nil
 }
 
-// formatDate rend une date au format AAAA-MM-JJ, ou la chaîne vide pour la
-// valeur zéro — « pas encore », dans le vocabulaire des domaines.
+// formatDate rend une DATE CIVILE au format AAAA-MM-JJ, ou la chaîne vide pour
+// la valeur zéro — « pas encore », dans le vocabulaire des domaines.
+//
+// Les dates civiles — celles que l'agent a saisies : date de pièce, date
+// prévue, date d'envoi d'une demande — sont stockées à minuit UTC et relues par
+// pgx dans le fuseau du serveur ; le recadrage UTC les rend telles qu'elles ont
+// été saisies. Un horodatage réel passe par [formatInstant].
 func formatDate(date time.Time) string {
 	if date.IsZero() {
 		return ""
 	}
 	return date.UTC().Format(dateLayout)
+}
+
+// formatInstant rend le jour d'un HORODATAGE au format AAAA-MM-JJ, dans le
+// fuseau du serveur — celui que l'interface web affiche, pour que l'agent et
+// l'écran ne racontent pas deux jours différents d'un même règlement.
+func formatInstant(instant time.Time) string {
+	return formatInstantIn(instant, time.Local)
+}
+
+// formatInstantIn est [formatInstant] avec un fuseau explicite, la couture par
+// laquelle les tests vérifient le recadrage sans toucher à `time.Local`.
+func formatInstantIn(instant time.Time, loc *time.Location) string {
+	if instant.IsZero() {
+		return ""
+	}
+	return instant.In(loc).Format(dateLayout)
 }

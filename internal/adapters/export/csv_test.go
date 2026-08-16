@@ -11,13 +11,36 @@ import (
 	"github.com/Romain-Badino/Avanti/internal/finance"
 )
 
+// Les dates du dossier de test se distinguent par nature, parce que le dossier
+// les met en forme différemment.
+//
+// dateTestPiece est une DATE CIVILE : celle que porte la facture, saisie par
+// une personne, stockée à minuit UTC — c'est la convention du dépôt.
+//
+// Les deux autres sont des HORODATAGES, posés par l'horloge au moment de la
+// transition. Ils portent donc une heure de la journée : minuit UTC en ferait
+// des valeurs qu'aucune horloge ne produit, et masquerait le recadrage de
+// fuseau que le dossier leur applique.
+var (
+	dateTestPiece            = time.Date(2026, time.April, 3, 0, 0, 0, 0, time.UTC)
+	instantTestReglement     = time.Date(2026, time.May, 5, 9, 12, 0, 0, time.UTC)
+	instantTestRemboursement = time.Date(2026, time.June, 9, 15, 47, 0, 0, time.UTC)
+)
+
+// jourLocal rend le jour d'un horodatage tel que le dossier l'écrit : dans le
+// fuseau du serveur. L'attente se calcule plutôt que de s'écrire en dur, sans
+// quoi `make ci` ne passerait que sur une machine réglée sur UTC.
+func jourLocal(instant time.Time) string {
+	return instant.In(time.Local).Format("02/01/2006")
+}
+
 // dossierTest assemble un dossier représentatif : une facture payée et
 // remboursée avec pièces jointes, une facture impayée hors devis, un acompte —
 // avec des accents partout où le vrai contenu en aura.
 func dossierTest() finance.DossierAssurance {
-	date := time.Date(2026, time.April, 3, 0, 0, 0, 0, time.UTC)
-	paid := time.Date(2026, time.May, 5, 0, 0, 0, 0, time.UTC)
-	refunded := time.Date(2026, time.June, 9, 0, 0, 0, 0, time.UTC)
+	date := dateTestPiece
+	paid := instantTestReglement
+	refunded := instantTestRemboursement
 
 	return finance.DossierAssurance{
 		GeneratedAt: time.Date(2026, time.August, 14, 10, 0, 0, 0, time.UTC),
@@ -124,9 +147,9 @@ func TestCSVRoundTrip(t *testing.T) {
 		t.Errorf("Date = %q", facture[4])
 	case facture[5] != "11800,50":
 		t.Errorf("Montant = %q", facture[5])
-	case facture[6] != "Payée" || facture[7] != "05/05/2026":
+	case facture[6] != "Payée" || facture[7] != jourLocal(instantTestReglement):
 		t.Errorf("règlement = (%q, %q)", facture[6], facture[7])
-	case facture[8] != "Remboursée" || facture[10] != "10000,00" || facture[11] != "09/06/2026":
+	case facture[8] != "Remboursée" || facture[10] != "10000,00" || facture[11] != jourLocal(instantTestRemboursement):
 		t.Errorf("assurance = (%q, %q, %q)", facture[8], facture[10], facture[11])
 	case !strings.Contains(facture[12], "facture-042.pdf (facture)"):
 		t.Errorf("pièces = %q", facture[12])

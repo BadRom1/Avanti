@@ -196,12 +196,17 @@ func parseDate(raw string) (time.Time, error) {
 	return time.Time{}, errDateIllisible
 }
 
-// formatDate écrit une date en notation française. Une date nulle rend la chaîne
-// vide plutôt que « 01/01/0001 », qui n'apprendrait rien à personne.
+// formatDate écrit une DATE CIVILE en notation française. Une date nulle rend
+// la chaîne vide plutôt que « 01/01/0001 », qui n'apprendrait rien à personne.
 //
-// Le retour en UTC n'est pas cosmétique : les dates sont stockées à minuit UTC
+// Le retour en UTC n'est pas cosmétique : les dates civiles — celles qu'on
+// saisit, date de pièce ou date prévue d'étape — sont stockées à minuit UTC
 // mais pgx les relit dans le fuseau local du serveur. Sans ce recadrage, une
 // machine à l'ouest de Greenwich afficherait la veille.
+//
+// Ne PAS l'employer pour un horodatage réel (PaidAt, ReachedAt, CreatedAt…) :
+// ceux-là marquent un instant, pas un jour du calendrier, et se mettent en
+// forme avec [formatInstant].
 func formatDate(instant time.Time) string {
 	if instant.IsZero() {
 		return ""
@@ -209,7 +214,29 @@ func formatDate(instant time.Time) string {
 	return instant.UTC().Format(dateDisplayLayout)
 }
 
-// formatDateInput écrit une date pour un champ <input type="date">. Même
+// formatInstant écrit le jour d'un HORODATAGE en notation française.
+//
+// Contrairement à une date civile, un horodatage désigne un point du temps :
+// le domaine le pose en UTC (`at.UTC()`), pgx le relit dans le fuseau du
+// serveur. Le recadrage UTC de [formatDate] lui ferait afficher la veille pour
+// tout ce qui s'est produit après minuit local à l'est de Greenwich — une
+// facture réglée à 00h30 à Paris est datée de la veille en UTC. On se ramène
+// donc au fuseau du serveur, quel que soit le fuseau que porte la valeur reçue.
+func formatInstant(instant time.Time) string {
+	return formatInstantIn(instant, time.Local)
+}
+
+// formatInstantIn est [formatInstant] avec un fuseau explicite — la couture par
+// laquelle les tests vérifient le recadrage sans toucher à `time.Local`, que la
+// suite parallèle du paquet lit en même temps.
+func formatInstantIn(instant time.Time, loc *time.Location) string {
+	if instant.IsZero() {
+		return ""
+	}
+	return instant.In(loc).Format(dateDisplayLayout)
+}
+
+// formatDateInput écrit une date civile pour un champ <input type="date">. Même
 // recadrage UTC que formatDate : sans lui, ouvrir puis enregistrer un
 // formulaire reculerait la date d'un jour à chaque passage.
 func formatDateInput(instant time.Time) string {
@@ -217,6 +244,24 @@ func formatDateInput(instant time.Time) string {
 		return ""
 	}
 	return instant.UTC().Format(dateInputLayout)
+}
+
+// civilDay ramène un instant au jour civil du serveur, à minuit UTC — la
+// convention de stockage des dates saisies.
+//
+// C'est ce qu'attend [formatDateInput] pour pré-remplir un formulaire à la date
+// du jour : lui passer l'horloge brute daterait de la veille toute ouverture
+// faite avant que le fuseau du serveur ne rejoigne UTC (à Paris, entre minuit
+// et 02h00 l'été).
+func civilDay(instant time.Time) time.Time {
+	return civilDayIn(instant, time.Local)
+}
+
+// civilDayIn est [civilDay] avec un fuseau explicite, la couture par laquelle
+// les tests vérifient le recadrage sans toucher à `time.Local`.
+func civilDayIn(instant time.Time, loc *time.Location) time.Time {
+	year, month, day := instant.In(loc).Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
 
 // parseValidityDays lit une durée de validité exprimée en jours.
