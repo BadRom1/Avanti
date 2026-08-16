@@ -24,9 +24,9 @@ type suiviAssuranceJSON struct {
 func newSuiviAssuranceJSON(suivi finance.SuiviAssurance) suiviAssuranceJSON {
 	return suiviAssuranceJSON{
 		Statut:                   suivi.Statut.String(),
-		EnvoyeeLe:                formatDate(suivi.SentAt),
+		EnvoyeeLe:                formatInstant(suivi.SentAt),
 		MontantRembourseCentimes: int64(suivi.MontantRembourse),
-		RembourseeLe:             formatDate(suivi.RefundedAt),
+		RembourseeLe:             formatInstant(suivi.RefundedAt),
 	}
 }
 
@@ -54,7 +54,7 @@ func newFactureJSON(facture finance.Facture) factureJSON {
 		MontantCentimes: int64(facture.Montant),
 		Notes:           facture.Notes,
 		Paiement:        facture.Paiement.String(),
-		PayeeLe:         formatDate(facture.PaidAt),
+		PayeeLe:         formatInstant(facture.PaidAt),
 		Assurance:       newSuiviAssuranceJSON(facture.Assurance),
 	}
 }

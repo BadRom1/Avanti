@@ -52,6 +52,6 @@ func newDocumentJSON(doc document.Document) documentJSON {
 		Description:  doc.Description,
 		CibleType:    doc.Target.Type.String(),
 		CibleID:      doc.Target.ID,
-		DeposeeLe:    formatDate(doc.CreatedAt),
+		DeposeeLe:    formatInstant(doc.CreatedAt),
 	}
 }

@@ -128,11 +128,11 @@ func csvFactureRow(ligne finance.LigneFacture) []string {
 		formatDate(ligne.Date),
 		formatMontant(ligne.Montant),
 		paiementLabel(ligne.Paiement),
-		formatDate(ligne.PaidAt),
+		formatInstant(ligne.PaidAt),
 		assuranceLabel(ligne.Assurance.Statut),
-		formatDate(ligne.Assurance.SentAt),
+		formatInstant(ligne.Assurance.SentAt),
 		csvRembourse(ligne.Assurance),
-		formatDate(ligne.Assurance.RefundedAt),
+		formatInstant(ligne.Assurance.RefundedAt),
 		neutralizeCell(formatPieces(ligne.Pieces)),
 	}
 }
@@ -152,9 +152,9 @@ func csvAcompteRow(ligne finance.LigneAcompte) []string {
 		moyenLabel(ligne.Moyen),
 		"",
 		assuranceAcompteLabel(ligne.Assurance.Statut),
-		formatDate(ligne.Assurance.SentAt),
+		formatInstant(ligne.Assurance.SentAt),
 		csvRembourse(ligne.Assurance),
-		formatDate(ligne.Assurance.RefundedAt),
+		formatInstant(ligne.Assurance.RefundedAt),
 		neutralizeCell(formatPieces(ligne.Pieces)),
 	}
 }

@@ -167,6 +167,63 @@ func TestFormatDate(t *testing.T) {
 	}
 }
 
+// TestFormatInstantRecadreDansLeFuseauDuServeur fixe la frontière entre les
+// deux mises en forme : une date civile se lit en UTC, un horodatage dans le
+// fuseau du serveur.
+//
+// Le cas est celui d'une facture réglée à 00h30 à Paris : l'instant est du 15
+// en UTC, du 16 à l'écran de qui l'a saisie. La traiter en date civile la
+// daterait de la veille.
+func TestFormatInstantRecadreDansLeFuseauDuServeur(t *testing.T) {
+	t.Parallel()
+
+	paris := time.FixedZone("CEST", 2*60*60)
+	regle := time.Date(2026, time.August, 15, 22, 30, 0, 0, time.UTC)
+
+	if got := formatInstantIn(regle, paris); got != "16/08/2026" {
+		t.Errorf("formatInstantIn(22h30 UTC, +02:00) = %q, attendu 16/08/2026", got)
+	}
+	// La valeur est un instant : le fuseau qu'elle porte à l'arrivée — UTC
+	// depuis le domaine, local depuis pgx — ne change pas ce qui s'affiche.
+	if got := formatInstantIn(regle.In(paris), paris); got != "16/08/2026" {
+		t.Errorf("formatInstantIn(même instant porté en +02:00) = %q, attendu 16/08/2026", got)
+	}
+	// Une date civile, elle, se lit bien en UTC : c'est ce qui a été saisi.
+	if got := formatDate(time.Date(2026, time.August, 16, 0, 0, 0, 0, time.UTC)); got != "16/08/2026" {
+		t.Errorf("formatDate(minuit UTC) = %q, attendu 16/08/2026", got)
+	}
+	if got := formatInstantIn(time.Time{}, paris); got != "" {
+		t.Errorf("formatInstantIn(zéro) = %q, attendu vide", got)
+	}
+}
+
+// TestCivilDayPreRemplitLeJourDuServeur couvre l'autre bout : un formulaire
+// ouvert à 01h15 à Paris propose le jour qu'affiche l'horloge de qui le
+// remplit, pas la veille que porte encore l'instant en UTC.
+func TestCivilDayPreRemplitLeJourDuServeur(t *testing.T) {
+	t.Parallel()
+
+	paris := time.FixedZone("CEST", 2*60*60)
+	maintenant := time.Date(2026, time.August, 15, 23, 15, 0, 0, time.UTC)
+
+	jour := civilDayIn(maintenant, paris)
+	if got := formatDateInput(jour); got != "2026-08-16" {
+		t.Errorf("formatDateInput(civilDayIn(23h15 UTC, +02:00)) = %q, attendu 2026-08-16", got)
+	}
+	// Le jour civil est bien posé à minuit UTC, la convention de stockage :
+	// un aller-retour de formulaire ne doit rien décaler.
+	if !jour.Equal(time.Date(2026, time.August, 16, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("civilDayIn() = %s, attendu 2026-08-16 00:00 UTC", jour)
+	}
+	parsed, err := parseDate(formatDateInput(jour))
+	if err != nil {
+		t.Fatalf("parseDate() = %v", err)
+	}
+	if !parsed.Equal(jour) {
+		t.Errorf("aller-retour = %s, attendu %s", parsed, jour)
+	}
+}
+
 func TestParseValidityDays(t *testing.T) {
 	t.Parallel()
 

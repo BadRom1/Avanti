@@ -111,7 +111,7 @@ func (h *Handler) buildDossier(ctx context.Context, actor identity.Actor) (dossi
 	dossier := dossierAssuranceResult{
 		Avertissement: avertissementAssurance,
 		Intitule:      "Dossier d'assurance — " + h.baseHost,
-		GenereLe:      formatDate(h.clock().UTC()),
+		GenereLe:      formatInstant(h.clock()),
 		Factures:      make([]ligneFactureJSON, 0, len(factures)),
 		Acomptes:      make([]ligneAcompteJSON, 0, len(acomptes)),
 		Totaux: totauxDossierJSON{

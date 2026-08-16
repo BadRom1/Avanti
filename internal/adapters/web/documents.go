@@ -198,7 +198,7 @@ func (h *Handler) newDocumentRows(r *http.Request, documents []document.Document
 			Description:    doc.Description,
 			Categorie:      h.translate(r, "document.categorie."+doc.Category.String()),
 			Taille:         h.formatTaille(r, doc.SizeBytes),
-			DeposeeLe:      formatDate(doc.CreatedAt),
+			DeposeeLe:      formatInstant(doc.CreatedAt),
 		}
 
 		rattachement, known := resolved[doc.Target]

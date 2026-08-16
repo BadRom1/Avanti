@@ -521,7 +521,7 @@ func (h *Handler) newJalonRows(r *http.Request, jalons []planning.Jalon, today t
 			Date:      formatDate(jalon.Date),
 			Statut:    h.jalonStatut(r, jalon.Atteint()),
 			Atteint:   jalon.Atteint(),
-			AtteintLe: formatDate(jalon.ReachedAt),
+			AtteintLe: formatInstant(jalon.ReachedAt),
 			EnRetard:  jalon.EnRetard(today),
 
 			PeutAtteindre: canWrite && !jalon.Atteint(),
@@ -590,8 +590,8 @@ func (h *Handler) newEtapeRows(r *http.Request, etapes []planning.Etape, view pl
 			Devis:       h.financePieceLabel(r, etape.DevisID, labels),
 			DebutPrevu:  formatDate(etape.PlannedStart),
 			FinPrevue:   formatDate(etape.PlannedEnd),
-			DebutReel:   formatDate(etape.ActualStart),
-			FinReelle:   formatDate(etape.ActualEnd),
+			DebutReel:   formatInstant(etape.ActualStart),
+			FinReelle:   formatInstant(etape.ActualEnd),
 			Statut:      h.translate(r, "planning.statut."+derived.Statut.String()),
 			StatutClass: "statut--" + derived.Statut.String(),
 			EnRetard:    derived.EnRetard,
@@ -618,8 +618,8 @@ func (h *Handler) newEtapeRows(r *http.Request, etapes []planning.Etape, view pl
 func (h *Handler) emptyEtapeForm(etapes []planning.Etape, retenus []retenuInfo) etapeFormData {
 	return etapeFormData{
 		Action:      planningEtapesPath,
-		DebutPrevu:  formatDateInput(h.now().UTC()),
-		FinPrevue:   formatDateInput(h.now().UTC()),
+		DebutPrevu:  formatDateInput(civilDay(h.now())),
+		FinPrevue:   formatDateInput(civilDay(h.now())),
 		Devis:       devisOptions(retenus, ""),
 		Dependances: dependanceOptions(etapes, "", nil),
 	}
@@ -629,7 +629,7 @@ func (h *Handler) emptyEtapeForm(etapes []planning.Etape, retenus []retenuInfo) 
 func (h *Handler) emptyJalonForm() jalonFormData {
 	return jalonFormData{
 		Action: planningJalonsPath,
-		Date:   formatDateInput(h.now().UTC()),
+		Date:   formatDateInput(civilDay(h.now())),
 	}
 }
 
